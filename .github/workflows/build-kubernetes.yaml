@@ -31,6 +31,9 @@ jobs:
             jq \
             curl \
             wget
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
 
       - name: Setup Go
         run: |
@@ -138,7 +141,7 @@ jobs:
           # Create packaging directory
           mkdir -p $GITHUB_WORKSPACE/k8s-riscv64-binaries
           
-          # Copy binaries
+          # Copy binaries_output/local/go/bin/
           cp -v $BIN_DIR/kube-apiserver $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
           cp -v $BIN_DIR/kube-controller-manager $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
           cp -v $BIN_DIR/kube-scheduler $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
