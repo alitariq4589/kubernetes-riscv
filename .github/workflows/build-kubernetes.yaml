@@ -229,7 +229,6 @@ jobs:
             ## Architecture
             - **Platform**: linux/riscv64
             - **Built on**: Milk-V Pioneer (RISC-V)
-            - **Go Version**: ${{ steps.get-version.outputs.go_version }}
             
             ## Notes
             - Built from official Kubernetes source: https://github.com/kubernetes/kubernetes
