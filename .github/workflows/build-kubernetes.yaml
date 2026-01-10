@@ -114,9 +114,10 @@ jobs:
           cd kubernetes
           K8S_VERSION=$(cat version 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
           RELEASE_TAG="${{ steps.get-latest-tag.outputs.tag_name }}"
-          
+          GO_VERSION=$(go version | awk '{print $3}')
           echo "k8s_version=$K8S_VERSION" >> $GITHUB_OUTPUT
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "go_version=$GO_VERSION" >> $GITHUB_OUTPUT
           
           echo "Kubernetes Version: $K8S_VERSION"
           echo "Release Tag: $RELEASE_TAG"
@@ -220,7 +221,7 @@ jobs:
             ## Architecture
             - **Platform**: linux/riscv64
             - **Built on**: Milk-V Pioneer (RISC-V)
-            - **Go Version**: $(go version | awk '{print $3}')
+            - **Go Version**: ${{ steps.get-version.outputs.go_version }}
             
             ## Notes
             - This is an **unofficial community build**
