@@ -31,6 +31,14 @@ jobs:
             jq \
             curl \
             wget
+      - name: Check environment
+        run: |
+          set -eux
+          uname -a
+          gcc --version
+          g++ --version
+          ldd --version
+          cat /etc/os-release
       - name: Checkout repo
         uses: actions/checkout@v4
 
