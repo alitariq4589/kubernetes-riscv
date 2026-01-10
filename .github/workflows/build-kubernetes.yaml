@@ -123,8 +123,8 @@ jobs:
           cd kubernetes
           
           # Find the output directory (Kubernetes build system may vary)
-          if [ -d "_output/local/bin/linux_riscv64" ]; then
-            BIN_DIR="_output/local/bin/linux_riscv64"
+          if [ -d "_output/local/go/bin" ]; then
+            BIN_DIR="_output/local/go/bin"
           elif [ -d "_output/bin" ]; then
             BIN_DIR="_output/bin"
           else
