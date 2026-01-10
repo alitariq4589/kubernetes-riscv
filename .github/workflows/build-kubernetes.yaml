@@ -224,15 +224,11 @@ jobs:
             - **Go Version**: ${{ steps.get-version.outputs.go_version }}
             
             ## Notes
-            - This is an **unofficial community build**
             - Built from official Kubernetes source: https://github.com/kubernetes/kubernetes
             - No modifications to source code
-            - For production use, wait for official RISC-V support
             
             ## Related Links
             - [Official Kubernetes Docs](https://kubernetes.io/docs/)
-            - [RISC-V Support Proposal](https://github.com/kubernetes/kubernetes/issues/132836)
-            - [K3s RISC-V Fork](https://github.com/CARV-ICS-FORTH/kubernetes-riscv64)
           files: |
             ${{ github.workspace }}/kubernetes-${{ steps.get-latest-tag.outputs.tag_name }}-riscv64-linux.tar.gz
           draft: false
