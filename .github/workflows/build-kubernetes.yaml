@@ -6,6 +6,8 @@ on:
     # Run monthly on the 1st at midnight
     - cron: "0 0 1 * *"
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -99,9 +101,9 @@ jobs:
           # Option 1: Build all binaries (takes longer but comprehensive)
           KUBE_BUILD_PLATFORMS=linux/riscv64 make all WHAT="cmd/kube-apiserver cmd/kube-controller-manager cmd/kube-scheduler cmd/kubelet cmd/kube-proxy cmd/kubectl cmd/kubeadm"
           
-          # The binaries will be in _output/local/bin/linux_riscv64/
+          # The binaries will be in _output/local/go/bin/
           echo "Build completed!"
-          ls -lh _output/local/bin/linux_riscv64/ || ls -lh _output/bin/ || find _output -name "kube*" -type f
+          ls -lh _output/local/go/bin/ || ls -lh _output/bin/ || find _output -name "kube*" -type f
 
       - name: Get version and prepare artifacts
         id: get-version
