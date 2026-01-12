@@ -20,7 +20,7 @@ tar -xzf kubernetes-v1.35.0-x86_64-linux.tar.gz -C ~/k8s-custom/
 # Verify the binaries
 ls -lh ~/k8s-custom/
 ```
-### Remove/Replace the already installed Kubernetes
+### Remove/Replace the already installed Kubernetes (optional)
 ```
 # Stop Kubernetes using systemd services (if you had installed an older version before)
 sudo systemctl stop kubelet
