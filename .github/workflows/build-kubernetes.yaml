@@ -12,29 +12,44 @@ on:
       - 'v*'
 
 jobs:
-  # Job to determine the Kubernetes version to build
-  get-version:
+  # Job to determine versions to build
+  get-versions:
     runs-on: ubuntu-latest
     outputs:
-      k8s_tag: ${{ steps.get-tag.outputs.tag_name }}
+      k8s_tag: ${{ steps.get-versions.outputs.k8s_tag }}
+      cni_version: ${{ steps.get-versions.outputs.cni_version }}
+      flannel_version: ${{ steps.get-versions.outputs.flannel_version }}
     steps:
-      - name: Get latest Kubernetes stable tag
-        id: get-tag
+      - name: Get latest versions
+        id: get-versions
         run: |
-          # Fetch latest stable release tag
-          LATEST_TAG=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/tags | \
+          # Get latest Kubernetes stable tag
+          K8S_TAG=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/tags | \
             jq -r '.[].name' | \
             grep -v -E 'alpha|beta|rc' | \
             grep '^v1\.' | \
             sort -V | \
             tail -n 1)
           
-          echo "Latest stable Kubernetes version: $LATEST_TAG"
-          echo "tag_name=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          # Get latest CNI plugins version
+          CNI_VERSION=$(curl -s https://api.github.com/repos/containernetworking/plugins/releases/latest | \
+            jq -r '.tag_name')
+          
+          # Get latest Flannel version
+          FLANNEL_VERSION=$(curl -s https://api.github.com/repos/flannel-io/flannel/releases/latest | \
+            jq -r '.tag_name')
+          
+          echo "Kubernetes version: $K8S_TAG"
+          echo "CNI plugins version: $CNI_VERSION"
+          echo "Flannel version: $FLANNEL_VERSION"
+          
+          echo "k8s_tag=$K8S_TAG" >> "$GITHUB_OUTPUT"
+          echo "cni_version=$CNI_VERSION" >> "$GITHUB_OUTPUT"
+          echo "flannel_version=$FLANNEL_VERSION" >> "$GITHUB_OUTPUT"
 
   # Build for x86_64
   build-x86:
-    needs: get-version
+    needs: get-versions
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -82,7 +97,7 @@ jobs:
           cd kubernetes
           
           # Fetch and checkout the tag
-          git fetch --depth=1 origin tag ${{ needs.get-version.outputs.k8s_tag }}
+          git fetch --depth=1 origin tag ${{ needs.get-versions.outputs.k8s_tag }}
           git checkout FETCH_HEAD
 
       - name: Setup build environment
@@ -106,6 +121,34 @@ jobs:
           echo "Build completed!"
           ls -lh _output/local/go/bin/ || ls -lh _output/bin/ || find _output -name "kube*" -type f
 
+      - name: Download CNI plugins for x86_64
+        run: |
+          CNI_VERSION="${{ needs.get-versions.outputs.cni_version }}"
+          
+          echo "Downloading CNI plugins ${CNI_VERSION} for amd64..."
+          wget -q "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-linux-amd64-${CNI_VERSION}.tgz"
+          
+          # Extract CNI plugins
+          mkdir -p cni-plugins-amd64
+          tar -xzf "cni-plugins-linux-amd64-${CNI_VERSION}.tgz" -C cni-plugins-amd64/
+          
+          echo "CNI plugins downloaded:"
+          ls -lh cni-plugins-amd64/
+
+      - name: Build Flannel for x86_64
+        run: |
+          echo "Building Flannel for amd64..."
+          
+          # Clone Flannel
+          git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
+          cd flannel
+          
+          # Build flanneld
+          make dist/flanneld-amd64
+          
+          echo "Flannel build completed:"
+          ls -lh dist/
+
       - name: Package binaries
         run: |
           cd kubernetes
@@ -123,38 +166,142 @@ jobs:
           
           echo "Using binary directory: $BIN_DIR"
           
-          # Create packaging directory
-          mkdir -p $GITHUB_WORKSPACE/k8s-x86_64-binaries
+          # Create packaging directory structure
+          mkdir -p $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin
+          mkdir -p $GITHUB_WORKSPACE/k8s-x86_64-binaries/cni
+          mkdir -p $GITHUB_WORKSPACE/k8s-x86_64-binaries/flannel
           
-          # Copy binaries
-          cp -v $BIN_DIR/kube-apiserver $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kube-controller-manager $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kube-scheduler $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kubelet $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kube-proxy $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kubectl $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
-          cp -v $BIN_DIR/kubeadm $GITHUB_WORKSPACE/k8s-x86_64-binaries/ || true
+          # Copy Kubernetes binaries
+          cp -v $BIN_DIR/kube-apiserver $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-controller-manager $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-scheduler $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubelet $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-proxy $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubectl $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubeadm $GITHUB_WORKSPACE/k8s-x86_64-binaries/bin/ || true
           
-          # Verify binaries
-          echo "Packaged binaries:"
-          ls -lh $GITHUB_WORKSPACE/k8s-x86_64-binaries/
+          # Copy CNI plugins
+          cp -rv $GITHUB_WORKSPACE/cni-plugins-amd64/* $GITHUB_WORKSPACE/k8s-x86_64-binaries/cni/
+          
+          # Copy Flannel
+          cp -v $GITHUB_WORKSPACE/flannel/dist/flanneld-amd64 $GITHUB_WORKSPACE/k8s-x86_64-binaries/flannel/flanneld
+          
+          # Create installation script
+          cat > $GITHUB_WORKSPACE/k8s-x86_64-binaries/install.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          echo "Installing Kubernetes binaries..."
+          sudo cp -v bin/* /usr/local/bin/
+          sudo chmod +x /usr/local/bin/kube*
+
+          echo "Installing CNI plugins..."
+          sudo mkdir -p /opt/cni/bin
+          sudo cp -v cni/* /opt/cni/bin/
+          sudo chmod +x /opt/cni/bin/*
+
+          echo "Installing Flannel..."
+          sudo cp -v flannel/flanneld /usr/local/bin/
+          sudo chmod +x /usr/local/bin/flanneld
+
+          echo "✅ Installation complete!"
+          echo ""
+          echo "Verify installation:"
+          echo "  kubectl version --client"
+          echo "  ls -l /opt/cni/bin"
+          echo "  flanneld --version"
+          EOF
+          
+          chmod +x $GITHUB_WORKSPACE/k8s-x86_64-binaries/install.sh
+          
+          # Create README
+          cat > $GITHUB_WORKSPACE/k8s-x86_64-binaries/README.md << 'EOF'
+          # Kubernetes with CNI and Flannel for x86_64
+
+          This package includes:
+          - Kubernetes binaries (kubectl, kubelet, kubeadm, etc.)
+          - CNI plugins (for container networking)
+          - Flannel (CNI network provider)
+          
+          ## Quick Installation
+          
+          ```bash
+          sudo ./install.sh
+          ```
+          
+          ## Manual Installation
+          
+          ### Kubernetes binaries
+          ```bash
+          sudo cp bin/* /usr/local/bin/
+          sudo chmod +x /usr/local/bin/kube*
+          ```
+          
+          ### CNI plugins
+          ```bash
+          sudo mkdir -p /opt/cni/bin
+          sudo cp cni/* /opt/cni/bin/
+          sudo chmod +x /opt/cni/bin/*
+          ```
+          
+          ### Flannel
+          ```bash
+          sudo cp flannel/flanneld /usr/local/bin/
+          sudo chmod +x /usr/local/bin/flanneld
+          ```
+          
+          ## Container Runtime Configuration
+          
+          To fix the cgroupDriver warning with containerd, create/edit `/etc/containerd/config.toml`:
+          
+          ```toml
+          version = 2
+          
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+              SystemdCgroup = true
+          ```
+          
+          Then restart containerd:
+          ```bash
+          sudo systemctl restart containerd
+          ```
+          
+          For Docker, edit `/etc/docker/daemon.json`:
+          ```json
+          {
+            "exec-opts": ["native.cgroupdriver=systemd"]
+          }
+          ```
+
+          Then restart Docker:
+          ```bash
+          sudo systemctl restart docker
+          ```
+          EOF
+          
+          # Verify packaging
+          echo "Package contents:"
+          find $GITHUB_WORKSPACE/k8s-x86_64-binaries -type f
           
           # Create tarball
-          tar -czf $GITHUB_WORKSPACE/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz \
+          tar -czf $GITHUB_WORKSPACE/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz \
             -C $GITHUB_WORKSPACE/k8s-x86_64-binaries .
           
           echo "Archive created:"
-          ls -lh $GITHUB_WORKSPACE/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz
+          ls -lh $GITHUB_WORKSPACE/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz
 
       - name: Upload x86_64 artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux
-          path: ${{ github.workspace }}/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz
+          name: kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux
+          path: ${{ github.workspace }}/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz
 
   # Build for RISC-V
   build-riscv:
-    needs: get-version
+    needs: get-versions
     runs-on: RISCV64
     permissions:
       contents: write
@@ -214,7 +361,7 @@ jobs:
           cd kubernetes
           
           # Fetch and checkout the tag
-          git fetch --depth=1 origin tag ${{ needs.get-version.outputs.k8s_tag }}
+          git fetch --depth=1 origin tag ${{ needs.get-versions.outputs.k8s_tag }}
           git checkout FETCH_HEAD
 
       - name: Setup build environment
@@ -242,6 +389,42 @@ jobs:
           echo "Build completed!"
           ls -lh _output/local/go/bin/ || ls -lh _output/bin/ || find _output -name "kube*" -type f
 
+      - name: Build CNI plugins for RISC-V
+        run: |
+          export PATH=/usr/local/go/bin:$PATH
+          export GOPATH=$HOME/go
+          
+          CNI_VERSION="${{ needs.get-versions.outputs.cni_version }}"
+          
+          echo "Building CNI plugins ${CNI_VERSION} for riscv64..."
+          
+          # Clone CNI plugins
+          git clone --depth=1 --branch ${CNI_VERSION} https://github.com/containernetworking/plugins.git cni-plugins
+          cd cni-plugins
+          
+          # Build for RISC-V
+          ./build_linux.sh
+          
+          echo "CNI plugins build completed:"
+          ls -lh bin/
+
+      - name: Build Flannel for RISC-V
+        run: |
+          export PATH=/usr/local/go/bin:$PATH
+          export GOPATH=$HOME/go
+          
+          echo "Building Flannel for riscv64..."
+          
+          # Clone Flannel
+          git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
+          cd flannel
+          
+          # Build flanneld for RISC-V
+          GOARCH=riscv64 make dist/flanneld
+          
+          echo "Flannel build completed:"
+          ls -lh dist/
+
       - name: Package binaries
         run: |
           cd kubernetes
@@ -259,38 +442,142 @@ jobs:
           
           echo "Using binary directory: $BIN_DIR"
           
-          # Create packaging directory
-          mkdir -p $GITHUB_WORKSPACE/k8s-riscv64-binaries
+          # Create packaging directory structure
+          mkdir -p $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin
+          mkdir -p $GITHUB_WORKSPACE/k8s-riscv64-binaries/cni
+          mkdir -p $GITHUB_WORKSPACE/k8s-riscv64-binaries/flannel
           
-          # Copy binaries
-          cp -v $BIN_DIR/kube-apiserver $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kube-controller-manager $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kube-scheduler $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kubelet $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kube-proxy $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kubectl $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
-          cp -v $BIN_DIR/kubeadm $GITHUB_WORKSPACE/k8s-riscv64-binaries/ || true
+          # Copy Kubernetes binaries
+          cp -v $BIN_DIR/kube-apiserver $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-controller-manager $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-scheduler $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubelet $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kube-proxy $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubectl $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
+          cp -v $BIN_DIR/kubeadm $GITHUB_WORKSPACE/k8s-riscv64-binaries/bin/ || true
           
-          # Verify binaries
-          echo "Packaged binaries:"
-          ls -lh $GITHUB_WORKSPACE/k8s-riscv64-binaries/
+          # Copy CNI plugins
+          cp -rv $GITHUB_WORKSPACE/cni-plugins/bin/* $GITHUB_WORKSPACE/k8s-riscv64-binaries/cni/
+          
+          # Copy Flannel
+          cp -v $GITHUB_WORKSPACE/flannel/dist/flanneld $GITHUB_WORKSPACE/k8s-riscv64-binaries/flannel/
+          
+          # Create installation script
+          cat > $GITHUB_WORKSPACE/k8s-riscv64-binaries/install.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          echo "Installing Kubernetes binaries..."
+          sudo cp -v bin/* /usr/local/bin/
+          sudo chmod +x /usr/local/bin/kube*
+
+          echo "Installing CNI plugins..."
+          sudo mkdir -p /opt/cni/bin
+          sudo cp -v cni/* /opt/cni/bin/
+          sudo chmod +x /opt/cni/bin/*
+
+          echo "Installing Flannel..."
+          sudo cp -v flannel/flanneld /usr/local/bin/
+          sudo chmod +x /usr/local/bin/flanneld
+
+          echo "✅ Installation complete!"
+          echo ""
+          echo "Verify installation:"
+          echo "  kubectl version --client"
+          echo "  ls -l /opt/cni/bin"
+          echo "  flanneld --version"
+          EOF
+          
+          chmod +x $GITHUB_WORKSPACE/k8s-riscv64-binaries/install.sh
+          
+          # Create README
+          cat > $GITHUB_WORKSPACE/k8s-riscv64-binaries/README.md << 'EOF'
+          # Kubernetes with CNI and Flannel for RISC-V
+              
+          This package includes:
+          - Kubernetes binaries (kubectl, kubelet, kubeadm, etc.)
+          - CNI plugins (for container networking)
+          - Flannel (CNI network provider)
+          
+          ## Quick Installation
+          
+          ```bash
+          sudo ./install.sh
+          ```
+          
+          ## Manual Installation
+          
+          ### Kubernetes binaries
+          ```bash
+          sudo cp bin/* /usr/local/bin/
+          sudo chmod +x /usr/local/bin/kube*
+          ```
+          
+          ### CNI plugins
+          ```bash
+          sudo mkdir -p /opt/cni/bin
+          sudo cp cni/* /opt/cni/bin/
+          sudo chmod +x /opt/cni/bin/*
+          ```
+          
+          ### Flannel
+          ```bash
+          sudo cp flannel/flanneld /usr/local/bin/
+          sudo chmod +x /usr/local/bin/flanneld
+          ```
+          
+          ## Container Runtime Configuration
+          
+          To fix the cgroupDriver warning with containerd, create/edit `/etc/containerd/config.toml`:
+          
+          ```toml
+          version = 2
+          
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+            
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+              SystemdCgroup = true
+          ```
+          
+          Then restart containerd:
+          ```bash
+          sudo systemctl restart containerd
+          ```
+          
+          For Docker, edit `/etc/docker/daemon.json`:
+          ```json
+          {
+            "exec-opts": ["native.cgroupdriver=systemd"]
+          }
+          ```
+          
+          Then restart Docker:
+          ```bash
+          sudo systemctl restart docker
+          ```
+          EOF
+          
+          # Verify packaging
+          echo "Package contents:"
+          find $GITHUB_WORKSPACE/k8s-riscv64-binaries -type f
           
           # Create tarball
-          tar -czf $GITHUB_WORKSPACE/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz \
+          tar -czf $GITHUB_WORKSPACE/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz \
             -C $GITHUB_WORKSPACE/k8s-riscv64-binaries .
           
           echo "Archive created:"
-          ls -lh $GITHUB_WORKSPACE/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz
+          ls -lh $GITHUB_WORKSPACE/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz
 
       - name: Upload RISC-V artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux
-          path: ${{ github.workspace }}/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz
+          name: kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux
+          path: ${{ github.workspace }}/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz
 
   # Create release with both architectures
   create-release:
-    needs: [get-version, build-x86, build-riscv]
+    needs: [get-versions, build-x86, build-riscv]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -301,18 +588,18 @@ jobs:
       - name: Download x86_64 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux
+          name: kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux
           path: ./artifacts
 
       - name: Download RISC-V artifacts
         uses: actions/download-artifact@v4
         with:
-          name: kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux
+          name: kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux
           path: ./artifacts
 
       - name: Create or update tag
         run: |
-          TAG="${{ needs.get-version.outputs.k8s_tag }}"
+          TAG="${{ needs.get-versions.outputs.k8s_tag }}"
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -328,66 +615,120 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.get-version.outputs.k8s_tag }}
-          name: Kubernetes ${{ needs.get-version.outputs.k8s_tag }} for x86_64 and RISC-V
+          tag_name: ${{ needs.get-versions.outputs.k8s_tag }}
+          name: Kubernetes ${{ needs.get-versions.outputs.k8s_tag }} for x86_64 and RISC-V
           body: |
-            # Kubernetes ${{ needs.get-version.outputs.k8s_tag }} - Multi-Architecture Build
+            # Kubernetes ${{ needs.get-versions.outputs.k8s_tag }} - Multi-Architecture Build
             
-            **Unofficial** builds of Kubernetes ${{ needs.get-version.outputs.k8s_tag }} for x86_64 and RISC-V architectures.
+            **Unofficial** builds of Kubernetes ${{ needs.get-versions.outputs.k8s_tag }} for x86_64 and RISC-V architectures.
             
-            ## Included Binaries
+            ## 📦 What's Included
             
-            - `kube-apiserver` - The Kubernetes API server
-            - `kube-controller-manager` - The controller manager
-            - `kube-scheduler` - The scheduler
-            - `kubelet` - The node agent
-            - `kube-proxy` - The network proxy
-            - `kubectl` - The command-line tool
-            - `kubeadm` - The cluster bootstrapping tool
+            Each tarball contains:
+            - **Kubernetes binaries**: kubectl, kubelet, kubeadm, kube-apiserver, kube-controller-manager, kube-scheduler, kube-proxy
+            - **CNI plugins** (${{ needs.get-versions.outputs.cni_version }}): bridge, host-local, loopback, portmap, and more
+            - **Flannel** (${{ needs.get-versions.outputs.flannel_version }}): Popular CNI network provider
+            - **Installation script**: Automated setup with `install.sh`
+            - **README**: Complete installation and configuration guide
             
-            ## Installation
+            ## 🚀 Quick Installation
             
             ### For x86_64 (AMD64)
             
             ```bash
             # Download and extract
-            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.get-version.outputs.k8s_tag }}/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz
-            tar -xzf kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz
+            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.get-versions.outputs.k8s_tag }}/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz
+            tar -xzf kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz
+            cd kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux
             
-            # Move binaries to PATH
-            sudo mv kube* /usr/local/bin/
+            # Install everything
+            sudo ./install.sh
             
-            # Verify installation
+            # Verify
             kubectl version --client
+            ls -l /opt/cni/bin
             ```
             
             ### For RISC-V (riscv64)
             
             ```bash
             # Download and extract
-            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.get-version.outputs.k8s_tag }}/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz
-            tar -xzf kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz
+            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.get-versions.outputs.k8s_tag }}/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz
+            tar -xzf kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz
+            cd kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux
             
-            # Move binaries to PATH
-            sudo mv kube* /usr/local/bin/
+            # Install everything
+            sudo ./install.sh
             
-            # Verify installation
+            # Verify
             kubectl version --client
+            ls -l /opt/cni/bin
             ```
             
-            ## Architectures
+            ## ⚙️ Fixing Container Runtime Warning
+            
+            If you see the cgroupDriver warning during `kubeadm init`, configure your container runtime:
+            
+            ### For containerd
+            
+            Edit `/etc/containerd/config.toml`:
+            
+            ```toml
+            version = 2
+            
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+              runtime_type = "io.containerd.runc.v2"
+              
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                SystemdCgroup = true
+            ```
+            
+            Then restart:
+            ```bash
+            sudo systemctl restart containerd
+            ```
+            
+            ### For Docker
+            
+            Edit `/etc/docker/daemon.json`:
+            
+            ```json
+            {
+              "exec-opts": ["native.cgroupdriver=systemd"]
+            }
+            ```
+            
+            Then restart:
+            ```bash
+            sudo systemctl restart docker
+            ```
+            
+            ## 📋 Component Versions
+            
+            - **Kubernetes**: ${{ needs.get-versions.outputs.k8s_tag }}
+            - **CNI Plugins**: ${{ needs.get-versions.outputs.cni_version }}
+            - **Flannel**: ${{ needs.get-versions.outputs.flannel_version }}
+            
+            ## 🏗️ Architectures
+            
             - **x86_64**: linux/amd64 (built on ubuntu-latest)
             - **RISC-V**: linux/riscv64 (built on Milk-V Pioneer)
             
-            ## Notes
-            - Built from official Kubernetes source: https://github.com/kubernetes/kubernetes
-            - No modifications to source code
-            - Both builds are functionally equivalent
+            ## 📝 Notes
             
-            ## Related Links
-            - [Official Kubernetes Docs](https://kubernetes.io/docs/)
+            - Built from official sources without modifications
+            - CNI plugins are required for pod networking
+            - Flannel provides a simple overlay network
+            - All binaries are statically linked where possible
+            
+            ## 🔗 Related Links
+            
+            - [Kubernetes Documentation](https://kubernetes.io/docs/)
+            - [CNI Plugins](https://github.com/containernetworking/plugins)
+            - [Flannel Documentation](https://github.com/flannel-io/flannel)
+            - [Container Runtime Configuration](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)
           files: |
-            ./artifacts/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-x86_64-linux.tar.gz
-            ./artifacts/kubernetes-${{ needs.get-version.outputs.k8s_tag }}-riscv64-linux.tar.gz
+            ./artifacts/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-x86_64-linux.tar.gz
+            ./artifacts/kubernetes-${{ needs.get-versions.outputs.k8s_tag }}-riscv64-linux.tar.gz
           draft: false
           prerelease: false
