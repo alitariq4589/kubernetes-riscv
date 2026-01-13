@@ -90,12 +90,11 @@ jobs:
                 .
               ;;
             operator)
-              DOCKERFILE="images/operator/Dockerfile"
+              DOCKERFILE="images/operator-generic/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
               docker buildx build \
                 --platform linux/amd64 \
                 --file ${DOCKERFILE} \
-                --build-arg OPERATOR_VARIANT=generic \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
                 --push \
@@ -211,12 +210,11 @@ jobs:
                 .
               ;;
             operator)
-              DOCKERFILE="images/operator/Dockerfile"
+              DOCKERFILE="images/operator-generic/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
               sudo docker buildx build \
                 --platform linux/riscv64 \
                 --file ${DOCKERFILE} \
-                --build-arg OPERATOR_VARIANT=generic \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
                 --tag ${IMAGE_NAME}:latest-riscv64 \
                 --push \
