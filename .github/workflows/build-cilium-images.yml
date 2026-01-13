@@ -183,12 +183,12 @@ jobs:
       - name: Set up Docker Buildx
         run: |
           # Use sudo for docker commands
-          sudo docker buildx create --use --name riscv-builder || sudo docker buildx use riscv-builder
-          sudo docker buildx inspect --bootstrap
+          docker buildx create --use --name riscv-builder || docker buildx use riscv-builder
+          docker buildx inspect --bootstrap
 
       - name: Log in to DockerHub
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Clone Cilium repository
         run: |
@@ -203,7 +203,7 @@ jobs:
             cilium)
               DOCKERFILE="images/cilium/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
-              sudo docker buildx build \
+              docker buildx build \
                 --platform linux/riscv64 \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
@@ -214,7 +214,7 @@ jobs:
             operator)
               DOCKERFILE="images/operator/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
-              sudo docker buildx build \
+              docker buildx build \
                 --platform linux/riscv64 \
                 --build-arg OPERATOR_VARIANT=cilium-operator \
                 --file ${DOCKERFILE} \
@@ -226,7 +226,7 @@ jobs:
             hubble-relay)
               DOCKERFILE="images/hubble-relay/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
-              sudo docker buildx build \
+              docker buildx build \
                 --platform linux/riscv64 \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
