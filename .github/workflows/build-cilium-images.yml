@@ -56,7 +56,7 @@ jobs:
       matrix:
         component:
           - cilium
-          - operator-generic
+          - operator
           - hubble-relay
     steps:
       - name: Set up Docker Buildx
@@ -81,24 +81,38 @@ jobs:
             cilium)
               DOCKERFILE="images/cilium/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
+              docker buildx build \
+                --platform linux/amd64 \
+                --file ${DOCKERFILE} \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
+                --tag ${IMAGE_NAME}:latest-amd64 \
+                --push \
+                .
               ;;
-            operator-generic)
+            operator)
               DOCKERFILE="images/operator/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
+              docker buildx build \
+                --platform linux/amd64 \
+                --file ${DOCKERFILE} \
+                --build-arg OPERATOR_VARIANT=generic \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
+                --tag ${IMAGE_NAME}:latest-amd64 \
+                --push \
+                .
               ;;
             hubble-relay)
               DOCKERFILE="images/hubble-relay/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
+              docker buildx build \
+                --platform linux/amd64 \
+                --file ${DOCKERFILE} \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
+                --tag ${IMAGE_NAME}:latest-amd64 \
+                --push \
+                .
               ;;
           esac
-          
-          docker buildx build \
-            --platform linux/amd64 \
-            --file ${DOCKERFILE} \
-            --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
-            --tag ${IMAGE_NAME}:latest-amd64 \
-            --push \
-            .
 
       - name: Build result
         run: echo "✅ Built ${{ matrix.component }} for x86_64"
@@ -114,29 +128,66 @@ jobs:
       matrix:
         component:
           - cilium
-          - operator-generic
+          - operator
           - hubble-relay
     steps:
+      - name: Check Docker installation
+        run: |
+          if ! command -v docker &> /dev/null; then
+            echo "Docker not found, installing..."
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo usermod -aG docker $USER
+          fi
+          
+          # Start Docker if not running
+          sudo systemctl start docker || true
+          sudo systemctl enable docker || true
+          
+          # Verify Docker is running
+          sudo docker ps
+
       - name: Install Docker buildx
         run: |
-          # Install buildx if not present
+          # Create plugin directory
           mkdir -p ~/.docker/cli-plugins/
-          if [ ! -f ~/.docker/cli-plugins/docker-buildx ]; then
-            BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | jq -r '.tag_name')
-            wget -q "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-riscv64" -O ~/.docker/cli-plugins/docker-buildx
+          
+          # Download and install buildx for RISC-V
+          BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | jq -r '.tag_name')
+          
+          # Try to download riscv64 binary, fall back to building from source if not available
+          if wget -q "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-riscv64" -O ~/.docker/cli-plugins/docker-buildx; then
             chmod +x ~/.docker/cli-plugins/docker-buildx
+          else
+            echo "No pre-built buildx for RISC-V, building from source..."
+            # Install Go if not present
+            if ! command -v go &> /dev/null; then
+              GO_VERSION=$(curl -s https://go.dev/VERSION?m=text | head -n1)
+              wget -q https://go.dev/dl/${GO_VERSION}.linux-riscv64.tar.gz
+              sudo rm -rf /usr/local/go
+              sudo tar -C /usr/local -xzf ${GO_VERSION}.linux-riscv64.tar.gz
+              export PATH=/usr/local/go/bin:$PATH
+            fi
+            
+            # Build buildx
+            git clone --depth=1 --branch ${BUILDX_VERSION} https://github.com/docker/buildx.git
+            cd buildx
+            make build
+            sudo cp bin/buildx ~/.docker/cli-plugins/docker-buildx
+            sudo chmod +x ~/.docker/cli-plugins/docker-buildx
+            cd ..
+            rm -rf buildx
           fi
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name riscv-builder || docker buildx use riscv-builder
-          docker buildx inspect --bootstrap
+          # Use sudo for docker commands
+          sudo docker buildx create --use --name riscv-builder || sudo docker buildx use riscv-builder
+          sudo docker buildx inspect --bootstrap
 
       - name: Log in to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Clone Cilium repository
         run: |
@@ -151,24 +202,38 @@ jobs:
             cilium)
               DOCKERFILE="images/cilium/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
+              sudo docker buildx build \
+                --platform linux/riscv64 \
+                --file ${DOCKERFILE} \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
+                --tag ${IMAGE_NAME}:latest-riscv64 \
+                --push \
+                .
               ;;
-            operator-generic)
+            operator)
               DOCKERFILE="images/operator/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
+              sudo docker buildx build \
+                --platform linux/riscv64 \
+                --file ${DOCKERFILE} \
+                --build-arg OPERATOR_VARIANT=generic \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
+                --tag ${IMAGE_NAME}:latest-riscv64 \
+                --push \
+                .
               ;;
             hubble-relay)
               DOCKERFILE="images/hubble-relay/Dockerfile"
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
+              sudo docker buildx build \
+                --platform linux/riscv64 \
+                --file ${DOCKERFILE} \
+                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
+                --tag ${IMAGE_NAME}:latest-riscv64 \
+                --push \
+                .
               ;;
           esac
-          
-          docker buildx build \
-            --platform linux/riscv64 \
-            --file ${DOCKERFILE} \
-            --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
-            --tag ${IMAGE_NAME}:latest-riscv64 \
-            --push \
-            .
 
       - name: Build result
         run: echo "✅ Built ${{ matrix.component }} for RISC-V"
@@ -248,37 +313,70 @@ jobs:
               repository: ${{ env.DOCKERHUB_REPO }}/operator-generic
               tag: ${{ needs.get-versions.outputs.cilium_tag }}
               useDigest: false
+            replicas: 1
           
-          hubble:
-            relay:
-              image:
-                repository: ${{ env.DOCKERHUB_REPO }}/hubble-relay
-                tag: ${{ needs.get-versions.outputs.cilium_tag }}
-                useDigest: false
-          
-          # Cilium configuration
-          kubeProxyReplacement: true
-          k8sServiceHost: REPLACE_WITH_YOUR_API_SERVER_IP
-          k8sServicePort: 6443
-          
-          # Enable Hubble for observability
           hubble:
             enabled: true
             relay:
               enabled: true
+              image:
+                repository: ${{ env.DOCKERHUB_REPO }}/hubble-relay
+                tag: ${{ needs.get-versions.outputs.cilium_tag }}
+                useDigest: false
             ui:
-              enabled: false  # Set to true if you want Hubble UI
+              enabled: false
           
-          # IPv4 configuration
+          # Kubernetes API server configuration
+          k8sServiceHost: REPLACE_WITH_YOUR_API_SERVER_IP
+          k8sServicePort: 6443
+          
+          # Replace kube-proxy
+          kubeProxyReplacement: true
+          
+          # IPAM configuration
           ipam:
             mode: kubernetes
           
-          # Tunnel mode (vxlan or geneve)
+          # Tunnel configuration
           tunnelProtocol: vxlan
+          
+          # Enable native routing mode
+          autoDirectNodeRoutes: false
+          
+          # IPv4 configuration
+          ipv4:
+            enabled: true
+          
+          ipv6:
+            enabled: false
+          
+          # Enable endpoint health checking
+          enableEndpointHealthChecking: true
+          
+          # Bandwidth manager
+          bandwidthManager:
+            enabled: false
+          
+          # Host firewall
+          hostFirewall:
+            enabled: false
+          
+          # Cilium health checks
+          healthChecking: true
+          
+          # Monitoring
+          prometheus:
+            enabled: true
+            serviceMonitor:
+              enabled: false
+          
+          # BGP control plane
+          bgpControlPlane:
+            enabled: false
           EOF
           
           # Create installation README
-          cat > cilium-manifests/README.md << 'EOF'
+          cat > cilium-manifests/README.md << 'EOFREADME'
           # Cilium Installation for RISC-V and x86 Kubernetes
 
           ## Images Built
@@ -318,35 +416,6 @@ jobs:
 
           # Check nodes are ready
           kubectl get nodes
-
-          # Install Cilium CLI (optional but recommended)
-          CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
-          curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz
-          sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
-
-          # Check Cilium status
-          cilium status --wait
-          ```
-
-          ## Manual Installation (without Helm)
-
-          If you prefer to use kubectl:
-
-          ```bash
-          # Generate manifest
-          cilium install \
-            --version ${{ needs.get-versions.outputs.cilium_tag }} \
-            --set image.repository=${{ env.DOCKERHUB_REPO }}/cilium \
-            --set image.tag=${{ needs.get-versions.outputs.cilium_tag }} \
-            --set operator.image.repository=${{ env.DOCKERHUB_REPO }}/operator-generic \
-            --set operator.image.tag=${{ needs.get-versions.outputs.cilium_tag }} \
-            --set hubble.relay.image.repository=${{ env.DOCKERHUB_REPO }}/hubble-relay \
-            --set hubble.relay.image.tag=${{ needs.get-versions.outputs.cilium_tag }} \
-            --helm-set kubeProxyReplacement=true \
-            --dry-run-helm-values > cilium-install.yaml
-
-          # Apply the manifest
-          kubectl apply -f cilium-install.yaml
           ```
 
           ## Troubleshooting
@@ -360,33 +429,7 @@ jobs:
           ```bash
           kubectl logs -n kube-system -l name=cilium-operator --tail=50
           ```
-
-          ### Verify connectivity
-          ```bash
-          cilium connectivity test
-          ```
-
-          ### Common Issues
-
-          **Pods stuck in ContainerCreating:**
-          - Check if Cilium pods are running: `kubectl get pods -n kube-system -l k8s-app=cilium`
-          - Check Cilium logs for errors
-
-          **Node shows NotReady:**
-          - Ensure Cilium pods are running on all nodes
-          - Check CNI configuration: `ls /etc/cni/net.d/`
-
-          ## Uninstalling Cilium
-
-          ```bash
-          # If installed with Helm
-          helm uninstall cilium -n kube-system
-
-          # Clean up
-          kubectl delete -n kube-system ds cilium
-          kubectl delete -n kube-system deploy cilium-operator
-          ```
-          EOF
+          EOFREADME
 
       - name: Upload Cilium manifests as artifact
         uses: actions/upload-artifact@v4
