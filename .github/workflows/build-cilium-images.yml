@@ -83,7 +83,6 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
               docker buildx build \
                 --platform linux/amd64 \
-                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
@@ -107,7 +106,6 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
               docker buildx build \
                 --platform linux/amd64 \
-                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
@@ -213,10 +211,11 @@ jobs:
                 .
               ;;
             operator)
-              DOCKERFILE="images/operator-generic/Dockerfile"
-              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
+              DOCKERFILE="images/operator/Dockerfile"
+              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
               sudo docker buildx build \
                 --platform linux/riscv64 \
+                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
                 --tag ${IMAGE_NAME}:latest-riscv64 \
@@ -250,7 +249,7 @@ jobs:
       matrix:
         component:
           - cilium
-          - operator-generic
+          - operator
           - hubble-relay
     steps:
       - name: Log in to DockerHub
@@ -311,7 +310,7 @@ jobs:
           
           operator:
             image:
-              repository: ${{ env.DOCKERHUB_REPO }}/operator-generic
+              repository: ${{ env.DOCKERHUB_REPO }}/operator
               tag: ${{ needs.get-versions.outputs.cilium_tag }}
               useDigest: false
             replicas: 1
@@ -385,7 +384,7 @@ jobs:
           All images are available for both `amd64` and `riscv64` architectures:
 
           - `${{ env.DOCKERHUB_REPO }}/cilium:${{ needs.get-versions.outputs.cilium_tag }}`
-          - `${{ env.DOCKERHUB_REPO }}/operator-generic:${{ needs.get-versions.outputs.cilium_tag }}`
+          - `${{ env.DOCKERHUB_REPO }}/operator:${{ needs.get-versions.outputs.cilium_tag }}`
           - `${{ env.DOCKERHUB_REPO }}/hubble-relay:${{ needs.get-versions.outputs.cilium_tag }}`
 
           ## Quick Installation
@@ -453,7 +452,7 @@ jobs:
             All images support both `linux/amd64` and `linux/riscv64`:
             
             - `${{ env.DOCKERHUB_REPO }}/cilium:${{ needs.get-versions.outputs.cilium_tag }}`
-            - `${{ env.DOCKERHUB_REPO }}/operator-generic:${{ needs.get-versions.outputs.cilium_tag }}`
+            - `${{ env.DOCKERHUB_REPO }}/operator:${{ needs.get-versions.outputs.cilium_tag }}`
             - `${{ env.DOCKERHUB_REPO }}/hubble-relay:${{ needs.get-versions.outputs.cilium_tag }}`
             
             ## 🚀 Quick Start
@@ -519,7 +518,7 @@ jobs:
           echo ""
           echo "Images published to DockerHub:"
           echo "  - ${{ env.DOCKERHUB_REPO }}/cilium:${{ needs.get-versions.outputs.cilium_tag }}"
-          echo "  - ${{ env.DOCKERHUB_REPO }}/operator-generic:${{ needs.get-versions.outputs.cilium_tag }}"
+          echo "  - ${{ env.DOCKERHUB_REPO }}/operator:${{ needs.get-versions.outputs.cilium_tag }}"
           echo "  - ${{ env.DOCKERHUB_REPO }}/hubble-relay:${{ needs.get-versions.outputs.cilium_tag }}"
           echo ""
           echo "Architectures: linux/amd64, linux/riscv64"
