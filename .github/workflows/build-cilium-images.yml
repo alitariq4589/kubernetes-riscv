@@ -184,21 +184,24 @@ jobs:
         run: |
           cd cilium
           
-          # 1. Define your architecture and registry
+          # Force native docker usage to avoid QEMU segfaults
+          export CONTAINER_ENGINE=docker
+          export DOCKER_BUILDX=0
           export ARCH=riscv64
           export DOCKER_DEV_ACCOUNT="${{ env.DOCKERHUB_REPO }}"
           export DOCKER_IMAGE_TAG="${{ needs.get-versions.outputs.cilium_tag }}-riscv64"
-          
-          # 2. Build the base images first (required for RISC-V)
-          # These will be tagged as local/cilium-builder and local/cilium-runtime
-          make -C images builder-image ARCH=riscv64
-          make -C images runtime-image ARCH=riscv64
 
-          # 3. Override the image variables so the build uses your local bases
-          # We point them to the tags created by the steps above
+          # 1. Build base images natively on the Milk-V
+          echo "Building base images..."
+          make -C images runtime-image ARCH=riscv64
+          make -C images builder-image ARCH=riscv64
+
+          # 2. Point the build to your local bases instead of Quay.io
+          # By default, Cilium makefiles look for specific tags; we override them:
           export CILIUM_BUILDER_IMAGE=local/cilium-builder:latest
           export CILIUM_RUNTIME_IMAGE=local/cilium-runtime:latest
 
+          echo "Building ${{ matrix.component }}..."
           case "${{ matrix.component }}" in
             cilium)
               make dev-docker-image
@@ -210,6 +213,14 @@ jobs:
               make docker-hubble-relay-image
               ;;
           esac
+
+          # 3. Push the resulting images
+          # Since we used CONTAINER_ENGINE=docker (native), the images are in your local 'docker images'
+          # We need to manually push them now.
+          docker tag ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}-dev:${DOCKER_IMAGE_TAG} \
+                     ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}:${DOCKER_IMAGE_TAG}
+          
+          docker push ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}:${DOCKER_IMAGE_TAG}
 
       - name: Build result
         run: echo "✅ Built ${{ matrix.component }} for RISC-V"
