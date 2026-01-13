@@ -186,38 +186,16 @@ jobs:
           
           case "${{ matrix.component }}" in
             cilium)
-              DOCKERFILE="images/cilium/Dockerfile"
-              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
-              docker buildx build \
-                --platform linux/riscv64 \
-                --file ${DOCKERFILE} \
-                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
-                --tag ${IMAGE_NAME}:latest-riscv64 \
-                --push \
-                .
+              # Standard target for the Cilium Agent
+              make dev-docker-image
               ;;
             operator)
-              DOCKERFILE="images/operator/Dockerfile"
-              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
-              docker buildx build \
-                --platform linux/riscv64 \
-                --build-arg OPERATOR_VARIANT=cilium-operator \
-                --file ${DOCKERFILE} \
-                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
-                --tag ${IMAGE_NAME}:latest-riscv64 \
-                --push \
-                .
+              # Standard target for the Generic Operator
+              make docker-operator-generic-image
               ;;
             hubble-relay)
-              DOCKERFILE="images/hubble-relay/Dockerfile"
-              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
-              docker buildx build \
-                --platform linux/riscv64 \
-                --file ${DOCKERFILE} \
-                --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
-                --tag ${IMAGE_NAME}:latest-riscv64 \
-                --push \
-                .
+              # Standard target for Hubble Relay
+              make docker-hubble-relay-image
               ;;
           esac
 
