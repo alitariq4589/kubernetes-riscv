@@ -90,8 +90,8 @@ jobs:
                 .
               ;;
             operator)
-              DOCKERFILE="images/operator-generic/Dockerfile"
-              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator-generic"
+              DOCKERFILE="images/operator/Dockerfile"
+              IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
               docker buildx build \
                 --platform linux/amd64 \
                 --file ${DOCKERFILE} \
