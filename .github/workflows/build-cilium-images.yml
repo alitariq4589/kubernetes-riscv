@@ -154,6 +154,7 @@ jobs:
             fi
             
             # Build buildx
+            rm -rf buildx
             git clone --depth=1 --branch ${BUILDX_VERSION} https://github.com/docker/buildx.git
             cd buildx
             make build
@@ -175,6 +176,7 @@ jobs:
 
       - name: Clone Cilium repository
         run: |
+          rm -rf cilium
           git clone --depth=1 --branch ${{ needs.get-versions.outputs.cilium_version }} https://github.com/cilium/cilium.git
           cd cilium
 
