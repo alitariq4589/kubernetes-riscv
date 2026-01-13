@@ -288,8 +288,14 @@ jobs:
           # Push the images
           docker push ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
           docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
-
-  # Create multi-arch manifests
+      
+      - name: Inspect images before manifest creation
+        run: |
+          echo "Inspecting pause images:"
+          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-amd64 || echo "amd64 not found"
+          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 || echo "riscv64 not found"
+        
+        
   create-manifests:
     needs: [get-versions, build-pause-x86, build-pause-riscv, build-flannel-x86, build-flannel-riscv]
     runs-on: ubuntu-latest
@@ -305,7 +311,10 @@ jobs:
 
       - name: Create pause multi-arch manifest
         run: |
-          # Pause container
+          # Pause container - remove existing manifests if they exist
+          docker manifest rm ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }} 2>/dev/null || true
+          docker manifest rm ${{ env.DOCKERHUB_REPO }}/pause:latest 2>/dev/null || true
+          
           docker manifest create ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }} \
             ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-amd64 \
             ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
@@ -320,7 +329,10 @@ jobs:
 
       - name: Create Flannel multi-arch manifest
         run: |
-          # Flannel
+          # Flannel - remove existing manifests if they exist
+          docker manifest rm ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }} 2>/dev/null || true
+          docker manifest rm ${{ env.DOCKERHUB_REPO }}/flannel:latest 2>/dev/null || true
+          
           docker manifest create ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }} \
             ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
             ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
