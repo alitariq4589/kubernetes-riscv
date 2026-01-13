@@ -1,0 +1,562 @@
+name: Build Flannel Images for RISC-V and x86
+
+on:
+  workflow_dispatch:
+    inputs:
+      flannel_version:
+        description: 'Flannel version (e.g., v0.26.2)'
+        required: false
+        default: 'latest'
+      pause_version:
+        description: 'Pause container version'
+        required: false
+        default: '3.10'
+  schedule:
+    # Run monthly on the 15th at midnight
+    - cron: "0 0 15 * *"
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-flannel-riscv.yml'
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  # Get versions to build
+  get-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      flannel_version: ${{ steps.versions.outputs.flannel_version }}
+      flannel_tag: ${{ steps.versions.outputs.flannel_tag }}
+      pause_version: ${{ steps.versions.outputs.pause_version }}
+    steps:
+      - name: Get latest versions
+        id: versions
+        run: |
+          if [ "${{ github.event.inputs.flannel_version }}" = "latest" ] || [ -z "${{ github.event.inputs.flannel_version }}" ]; then
+            FLANNEL_VERSION=$(curl -s https://api.github.com/repos/flannel-io/flannel/releases/latest | jq -r '.tag_name')
+          else
+            FLANNEL_VERSION="${{ github.event.inputs.flannel_version }}"
+          fi
+          
+          PAUSE_VERSION="${{ github.event.inputs.pause_version }}"
+          if [ -z "$PAUSE_VERSION" ]; then
+            PAUSE_VERSION="3.10"
+          fi
+          
+          FLANNEL_TAG="${FLANNEL_VERSION#v}"
+          
+          echo "flannel_version=$FLANNEL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "flannel_tag=$FLANNEL_TAG" >> "$GITHUB_OUTPUT"
+          echo "pause_version=$PAUSE_VERSION" >> "$GITHUB_OUTPUT"
+          
+          echo "Building Flannel: $FLANNEL_VERSION"
+          echo "Building Pause: $PAUSE_VERSION"
+
+  # Build pause container for x86
+  build-pause-x86:
+    needs: get-versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create pause Dockerfile
+        run: |
+          mkdir -p pause-build
+          cd pause-build
+          
+          cat > Dockerfile << 'EOF'
+          FROM golang:1.22-alpine AS builder
+          WORKDIR /build
+          
+          # Create minimal pause program
+          RUN cat > pause.c << 'PAUSE_C'
+          #include <signal.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <sys/types.h>
+          #include <sys/wait.h>
+          #include <unistd.h>
+          
+          static void sigdown(int signo) {
+            psignal(signo, "Shutting down, got signal");
+            exit(0);
+          }
+          
+          static void sigreap(int signo) {
+            while (waitpid(-1, NULL, WNOHANG) > 0);
+          }
+          
+          int main() {
+            if (getpid() != 1) {
+              fprintf(stderr, "Warning: pause should run as PID 1\n");
+            }
+            
+            signal(SIGINT, sigdown);
+            signal(SIGTERM, sigdown);
+            signal(SIGCHLD, sigreap);
+          
+            for (;;) pause();
+            return 0;
+          }
+          PAUSE_C
+          
+          # Install build tools and build pause
+          RUN apk add --no-cache gcc musl-dev && \
+              gcc -static -o /pause pause.c && \
+              strip /pause
+          
+          FROM scratch
+          COPY --from=builder /pause /pause
+          ENTRYPOINT ["/pause"]
+          EOF
+
+      - name: Build and push pause for x86
+        run: |
+          cd pause-build
+          docker buildx build \
+            --platform linux/amd64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-amd64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-amd64 \
+            --push \
+            .
+
+  # Build pause container for RISC-V
+  build-pause-riscv:
+    needs: get-versions
+    runs-on: RISCV64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Setup Docker
+        run: |
+          if ! command -v docker &> /dev/null; then
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+          fi
+          sudo systemctl start docker
+          sudo systemctl enable docker
+
+      - name: Log in to DockerHub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Create pause Dockerfile
+        run: |
+          mkdir -p pause-build
+          cd pause-build
+          
+          cat > Dockerfile << 'EOF'
+          FROM riscv64/golang:1.22-alpine AS builder
+          WORKDIR /build
+          
+          RUN cat > pause.c << 'PAUSE_C'
+          #include <signal.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <sys/types.h>
+          #include <sys/wait.h>
+          #include <unistd.h>
+          
+          static void sigdown(int signo) {
+            psignal(signo, "Shutting down, got signal");
+            exit(0);
+          }
+          
+          static void sigreap(int signo) {
+            while (waitpid(-1, NULL, WNOHANG) > 0);
+          }
+          
+          int main() {
+            if (getpid() != 1) {
+              fprintf(stderr, "Warning: pause should run as PID 1\n");
+            }
+            
+            signal(SIGINT, sigdown);
+            signal(SIGTERM, sigdown);
+            signal(SIGCHLD, sigreap);
+          
+            for (;;) pause();
+            return 0;
+          }
+          PAUSE_C
+          
+          RUN apk add --no-cache gcc musl-dev && \
+              gcc -static -o /pause pause.c && \
+              strip /pause
+          
+          FROM scratch
+          COPY --from=builder /pause /pause
+          ENTRYPOINT ["/pause"]
+          EOF
+
+      - name: Build and push pause for RISC-V
+        run: |
+          cd pause-build
+          sudo docker build \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
+            .
+          sudo docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
+          sudo docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
+
+  # Build Flannel for x86
+  build-flannel-x86:
+    needs: get-versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Clone Flannel repository
+        run: |
+          git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
+
+      - name: Build and push Flannel for x86
+        run: |
+          cd flannel
+          docker buildx build \
+            --platform linux/amd64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64 \
+            --push \
+            .
+
+  # Build Flannel for RISC-V
+  build-flannel-riscv:
+    needs: get-versions
+    runs-on: RISCV64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Setup Docker
+        run: |
+          if ! command -v docker &> /dev/null; then
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+          fi
+          sudo systemctl start docker
+          sudo systemctl enable docker
+
+      - name: Log in to DockerHub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Clone Flannel repository
+        run: |
+          git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
+
+      - name: Build and push Flannel for RISC-V
+        run: |
+          cd flannel
+          sudo docker build \
+            --tag ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64 \
+            .
+          sudo docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
+          sudo docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
+
+  # Create multi-arch manifests
+  create-manifests:
+    needs: [get-versions, build-pause-x86, build-pause-riscv, build-flannel-x86, build-flannel-riscv]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create pause multi-arch manifest
+        run: |
+          # Pause container
+          docker manifest create ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }} \
+            ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
+          
+          docker manifest push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}
+          
+          docker manifest create ${{ env.DOCKERHUB_REPO }}/pause:latest \
+            ${{ env.DOCKERHUB_REPO }}/pause:latest-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
+          
+          docker manifest push ${{ env.DOCKERHUB_REPO }}/pause:latest
+
+      - name: Create Flannel multi-arch manifest
+        run: |
+          # Flannel
+          docker manifest create ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }} \
+            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
+          
+          docker manifest push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}
+          
+          docker manifest create ${{ env.DOCKERHUB_REPO }}/flannel:latest \
+            ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
+          
+          docker manifest push ${{ env.DOCKERHUB_REPO }}/flannel:latest
+
+  # Generate installation files
+  generate-install-files:
+    needs: [get-versions, create-manifests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create installation files
+        run: |
+          mkdir -p flannel-riscv-install
+          
+          # Create Helm values file
+          cat > flannel-riscv-install/flannel-values.yaml << EOF
+          podCidr: "10.244.0.0/16"
+          
+          # Custom images
+          image:
+            repository: ${{ env.DOCKERHUB_REPO }}/flannel
+            tag: ${{ needs.get-versions.outputs.flannel_tag }}
+          
+          # Pause container override
+          podAnnotations:
+            cni.projectcalico.org/ipv4pools: '["default-ipv4-ippool"]'
+          EOF
+          
+          # Create installation script
+          cat > flannel-riscv-install/install-flannel.sh << 'EOFSCRIPT'
+          #!/bin/bash
+          set -e
+          
+          DOCKERHUB_USER="${{ env.DOCKERHUB_REPO }}"
+          FLANNEL_VERSION="${{ needs.get-versions.outputs.flannel_tag }}"
+          PAUSE_VERSION="${{ needs.get-versions.outputs.pause_version }}"
+          
+          echo "=========================================="
+          echo "Installing Flannel for RISC-V/x86 Cluster"
+          echo "=========================================="
+          echo ""
+          
+          # Step 1: Configure containerd to use custom pause image
+          echo "Step 1: Configuring containerd pause image..."
+          
+          cat << EOF | sudo tee /tmp/containerd-config-patch.sh
+          #!/bin/bash
+          # Backup original config
+          sudo cp /etc/containerd/config.toml /etc/containerd/config.toml.backup
+          
+          # Update sandbox_image in containerd config
+          sudo sed -i "s|sandbox_image = .*|sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"|g" /etc/containerd/config.toml
+          
+          # Restart containerd
+          sudo systemctl restart containerd
+          
+          echo "Containerd configured to use custom pause image"
+          EOF
+          
+          chmod +x /tmp/containerd-config-patch.sh
+          
+          echo "Run this on ALL nodes (control plane + workers):"
+          echo "  sudo bash /tmp/containerd-config-patch.sh"
+          echo ""
+          read -p "Press enter after running the script on all nodes..."
+          
+          # Step 2: Install Flannel using Helm
+          echo ""
+          echo "Step 2: Installing Flannel using Helm..."
+          
+          # Add Flannel Helm repo
+          helm repo add flannel https://flannel-io.github.io/flannel/
+          helm repo update
+          
+          # Create namespace
+          kubectl create namespace kube-flannel || true
+          kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged
+          
+          # Install Flannel
+          helm install flannel \
+            --namespace kube-flannel \
+            --set podCidr="10.244.0.0/16" \
+            --set image.repository="${DOCKERHUB_USER}/flannel" \
+            --set image.tag="${FLANNEL_VERSION}" \
+            flannel/flannel
+          
+          echo ""
+          echo "=========================================="
+          echo "Flannel Installation Complete!"
+          echo "=========================================="
+          echo ""
+          echo "Verify installation:"
+          echo "  kubectl get pods -n kube-flannel"
+          echo "  kubectl get nodes"
+          echo ""
+          EOFSCRIPT
+          
+          chmod +x flannel-riscv-install/install-flannel.sh
+          
+          # Create README
+          cat > flannel-riscv-install/README.md << 'EOFREADME'
+          # Flannel for RISC-V and x86 Mixed Kubernetes Cluster
+          
+          This package contains everything needed to run Flannel on a mixed-architecture Kubernetes cluster.
+          
+          ## Images Built
+          
+          - `${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}` (amd64 + riscv64)
+          - `${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}` (amd64 + riscv64)
+          
+          ## Quick Installation
+          
+          ### Method 1: Automated Script (Recommended)
+          
+          ```bash
+          ./install-flannel.sh
+          ```
+          
+          ### Method 2: Manual Installation
+          
+          #### Step 1: Configure Pause Container (Run on ALL nodes)
+          
+          Edit `/etc/containerd/config.toml` and set:
+          
+          ```toml
+          [plugins."io.containerd.grpc.v1.cri"]
+            sandbox_image = "${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}"
+          ```
+          
+          Then restart containerd:
+          ```bash
+          sudo systemctl restart containerd
+          ```
+          
+          #### Step 2: Install Flannel using Helm
+          
+          ```bash
+          # Add Flannel repo
+          helm repo add flannel https://flannel-io.github.io/flannel/
+          helm repo update
+          
+          # Create namespace
+          kubectl create namespace kube-flannel
+          kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged
+          
+          # Install Flannel
+          helm install flannel \
+            --namespace kube-flannel \
+            --set podCidr="10.244.0.0/16" \
+            --set image.repository="${{ env.DOCKERHUB_REPO }}/flannel" \
+            --set image.tag="${{ needs.get-versions.outputs.flannel_tag }}" \
+            flannel/flannel
+          ```
+          
+          #### Step 3: Verify
+          
+          ```bash
+          kubectl get pods -n kube-flannel
+          kubectl get nodes
+          ```
+          
+          All nodes should show `Ready` status.
+          
+          ## Troubleshooting
+          
+          ### Pods still showing pause container errors
+          
+          Check containerd is using the right pause image:
+          ```bash
+          sudo grep sandbox_image /etc/containerd/config.toml
+          ```
+          
+          ### Flannel pods not starting
+          
+          Check logs:
+          ```bash
+          kubectl logs -n kube-flannel -l app=flannel
+          ```
+          
+          ### Nodes still NotReady
+          
+          Check kubelet logs:
+          ```bash
+          sudo journalctl -u kubelet -n 100
+          ```
+          EOFREADME
+
+      - name: Upload installation files
+        uses: actions/upload-artifact@v4
+        with:
+          name: flannel-riscv-install-${{ needs.get-versions.outputs.flannel_tag }}
+          path: flannel-riscv-install/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: flannel-${{ needs.get-versions.outputs.flannel_version }}
+          name: Flannel ${{ needs.get-versions.outputs.flannel_version }} for RISC-V
+          body: |
+            # Flannel ${{ needs.get-versions.outputs.flannel_version }} - RISC-V Support
+            
+            Multi-architecture Flannel images for mixed x86/RISC-V Kubernetes clusters.
+            
+            ## 🐧 Images Available
+            
+            All images support both `linux/amd64` and `linux/riscv64`:
+            
+            - `${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}`
+            - `${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}`
+            
+            ## 🚀 Quick Start
+            
+            Download the installation package and run:
+            
+            ```bash
+            ./install-flannel.sh
+            ```
+            
+            Or follow the manual instructions in the README.md.
+            
+            ## 📦 What's Included
+            
+            - Custom pause container for RISC-V
+            - Flannel binaries for RISC-V
+            - Helm values file
+            - Installation script
+            - Complete documentation
+            
+            ## 🔗 Links
+            
+            - [Flannel Documentation](https://github.com/flannel-io/flannel)
+            - [Kubernetes Documentation](https://kubernetes.io/docs/)
+          files: |
+            flannel-riscv-install/*
+          draft: false
+          prerelease: false
