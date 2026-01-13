@@ -131,21 +131,21 @@ jobs:
           - operator
           - hubble-relay
     steps:
-      - name: Check Docker installation
-        run: |
-          if ! command -v docker &> /dev/null; then
-            echo "Docker not found, installing..."
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-            sudo usermod -aG docker $USER
-          fi
+      # - name: Check Docker installation
+      #   run: |
+      #     if ! command -v docker &> /dev/null; then
+      #       echo "Docker not found, installing..."
+      #       curl -fsSL https://get.docker.com -o get-docker.sh
+      #       sudo sh get-docker.sh
+      #       sudo usermod -aG docker $USER
+      #     fi
           
-          # Start Docker if not running
-          sudo systemctl start docker || true
-          sudo systemctl enable docker || true
+      #     # Start Docker if not running
+      #     sudo systemctl start docker || true
+      #     sudo systemctl enable docker || true
           
-          # Verify Docker is running
-          sudo docker ps
+      #     # Verify Docker is running
+      #     sudo docker ps
 
       - name: Install Docker buildx
         run: |
