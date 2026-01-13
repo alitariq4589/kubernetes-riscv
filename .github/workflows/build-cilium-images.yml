@@ -83,6 +83,7 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/cilium"
               docker buildx build \
                 --platform linux/amd64 \
+                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
@@ -94,6 +95,7 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
               docker buildx build \
                 --platform linux/amd64 \
+                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
@@ -105,6 +107,7 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/hubble-relay"
               docker buildx build \
                 --platform linux/amd64 \
+                --build-arg OPERATOR_VARIANT=generic \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
