@@ -187,15 +187,15 @@ jobs:
           ENTRYPOINT ["/pause"]
           EOF
 
-            - name: Build and push pause for RISC-V
-              run: |
-                cd pause-build
-                docker build \
-                  --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
-                  --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
-                  .
-                docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
-                docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
+      - name: Build and push pause for RISC-V
+        run: |
+          cd pause-build
+          docker build \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
+            .
+          docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
+          docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
 
   # Build Flannel for x86
   build-flannel-x86:
