@@ -266,6 +266,7 @@ jobs:
 
       - name: Clone Flannel repository
         run: |
+          rm -rf flannel
           git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
 
       - name: Build and push Flannel for RISC-V
