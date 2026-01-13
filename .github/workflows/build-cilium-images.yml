@@ -94,7 +94,7 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
               docker buildx build \
                 --platform linux/amd64 \
-                --build-arg OPERATOR_VARIANT=generic \
+                --build-arg OPERATOR_VARIANT=cilium-operator \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-amd64 \
                 --tag ${IMAGE_NAME}:latest-amd64 \
@@ -215,7 +215,7 @@ jobs:
               IMAGE_NAME="${{ env.DOCKERHUB_REPO }}/operator"
               sudo docker buildx build \
                 --platform linux/riscv64 \
-                --build-arg OPERATOR_VARIANT=generic \
+                --build-arg OPERATOR_VARIANT=cilium-operator \
                 --file ${DOCKERFILE} \
                 --tag ${IMAGE_NAME}:${{ needs.get-versions.outputs.cilium_tag }}-riscv64 \
                 --tag ${IMAGE_NAME}:latest-riscv64 \
