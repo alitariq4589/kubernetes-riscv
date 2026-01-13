@@ -196,22 +196,15 @@ jobs:
           ENTRYPOINT ["/pause"]
           EOF
 
-      - name: Build and push Flannel for x86
+      - name: Build and push pause for RISC-V
         run: |
-          cd flannel
-          # Build the binary for amd64
-          ARCH=amd64 TAG=${{ needs.get-versions.outputs.flannel_tag }} make dist/flanneld-$(TAG)-amd64.docker
-          
-          # Load and tag the image
-          docker load -i dist/flanneld-${{ needs.get-versions.outputs.flannel_tag }}-amd64.docker
-          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
-            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
-          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
-            ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
-          
-          # Push the images
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
+          cd pause-build
+          docker build \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
+            .
+          docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
+          docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
 
   # Build Flannel for x86
   build-flannel-x86:
@@ -237,12 +230,19 @@ jobs:
       - name: Build and push Flannel for x86
         run: |
           cd flannel
-          docker buildx build \
-            --platform linux/amd64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64 \
-            --push \
-            .
+          # Build the binary for amd64
+          ARCH=amd64 TAG=${{ needs.get-versions.outputs.flannel_tag }} make dist/flanneld-$(TAG)-amd64.docker
+              
+          # Load and tag the image
+          docker load -i dist/flanneld-${{ needs.get-versions.outputs.flannel_tag }}-amd64.docker
+          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
+          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
+              
+          # Push the images
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
 
   # Build Flannel for RISC-V
   build-flannel-riscv:
