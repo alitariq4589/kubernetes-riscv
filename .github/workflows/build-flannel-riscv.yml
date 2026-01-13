@@ -227,22 +227,30 @@ jobs:
         run: |
           git clone --depth=1 --branch ${{ needs.get-versions.outputs.flannel_version }} https://github.com/flannel-io/flannel.git
 
-      - name: Build and push Flannel for x86
+      - name: Build and push flannel for x86_64
         run: |
           cd flannel
+              
+          # Set variables
+          TAG="${{ needs.get-versions.outputs.flannel_tag }}"
+          ARCH="amd64"
+              
           # Build the binary for amd64
-          ARCH=amd64 TAG=${{ needs.get-versions.outputs.flannel_tag }} make dist/flanneld-$(TAG)-amd64.docker
+          make ARCH=${ARCH} TAG=${TAG} dist/flanneld-${TAG}-${ARCH}.docker
               
           # Load and tag the image
-          docker load -i dist/flanneld-${{ needs.get-versions.outputs.flannel_tag }}-amd64.docker
-          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
-            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
-          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
-            ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
+          docker load -i dist/flanneld-${TAG}-${ARCH}.docker
+              
+          # Get the loaded image name from the docker output
+          LOADED_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "flanneld" | grep "${TAG}-${ARCH}" | head -1)
+              
+          # Tag the images
+          docker tag ${LOADED_IMAGE} ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
+          docker tag ${LOADED_IMAGE} ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
               
           # Push the images
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
 
   # Build Flannel for RISC-V
   build-flannel-riscv:
