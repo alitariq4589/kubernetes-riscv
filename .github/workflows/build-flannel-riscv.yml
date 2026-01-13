@@ -142,18 +142,10 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Setup Docker
-        run: |
-          if ! command -v docker &> /dev/null; then
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-          fi
-          sudo systemctl start docker
-          sudo systemctl enable docker
 
       - name: Log in to DockerHub
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Create pause Dockerfile
         run: |
@@ -204,15 +196,22 @@ jobs:
           ENTRYPOINT ["/pause"]
           EOF
 
-      - name: Build and push pause for RISC-V
+      - name: Build and push Flannel for x86
         run: |
-          cd pause-build
-          sudo docker build \
-            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
-            .
-          sudo docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
-          sudo docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
+          cd flannel
+          # Build the binary for amd64
+          ARCH=amd64 TAG=${{ needs.get-versions.outputs.flannel_tag }} make dist/flanneld-$(TAG)-amd64.docker
+          
+          # Load and tag the image
+          docker load -i dist/flanneld-${{ needs.get-versions.outputs.flannel_tag }}-amd64.docker
+          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
+          docker tag $(REGISTRY):${{ needs.get-versions.outputs.flannel_tag }}-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
+          
+          # Push the images
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-amd64
 
   # Build Flannel for x86
   build-flannel-x86:
@@ -264,7 +263,7 @@ jobs:
 
       - name: Log in to DockerHub
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Clone Flannel repository
         run: |
@@ -273,12 +272,12 @@ jobs:
       - name: Build and push Flannel for RISC-V
         run: |
           cd flannel
-          sudo docker build \
+          docker build \
             --tag ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64 \
             --tag ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64 \
             .
-          sudo docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
-          sudo docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
 
   # Create multi-arch manifests
   create-manifests:
