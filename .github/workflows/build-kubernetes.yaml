@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # Run monthly on the 1st at midnight
-    - cron: "0 0 1 * *"
+    - cron: "0 0 10 * *"
   push:
     branches:
       - main
