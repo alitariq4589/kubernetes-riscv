@@ -151,11 +151,9 @@ jobs:
         run: |
           mkdir -p pause-build
           cd pause-build
-          
           cat > Dockerfile << 'EOF'
           FROM riscv64/golang:1.22-alpine AS builder
           WORKDIR /build
-          
           RUN cat > pause.c << 'PAUSE_C'
           #include <signal.h>
           #include <stdio.h>
@@ -163,48 +161,41 @@ jobs:
           #include <sys/types.h>
           #include <sys/wait.h>
           #include <unistd.h>
-          
           static void sigdown(int signo) {
             psignal(signo, "Shutting down, got signal");
             exit(0);
           }
-          
           static void sigreap(int signo) {
             while (waitpid(-1, NULL, WNOHANG) > 0);
           }
-          
           int main() {
             if (getpid() != 1) {
               fprintf(stderr, "Warning: pause should run as PID 1\n");
             }
-            
             signal(SIGINT, sigdown);
             signal(SIGTERM, sigdown);
             signal(SIGCHLD, sigreap);
-          
             for (;;) pause();
             return 0;
           }
           PAUSE_C
-          
           RUN apk add --no-cache gcc musl-dev && \
               gcc -static -o /pause pause.c && \
               strip /pause
-          
           FROM scratch
           COPY --from=builder /pause /pause
           ENTRYPOINT ["/pause"]
           EOF
-
-      - name: Build and push pause for RISC-V
-        run: |
-          cd pause-build
-          docker build \
-            --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
-            .
-          docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
-          docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
+          
+            - name: Build and push pause for RISC-V
+              run: |
+                cd pause-build
+                docker build \
+                  --tag ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 \
+                  --tag ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64 \
+                  .
+                docker push ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64
+                docker push ${{ env.DOCKERHUB_REPO }}/pause:latest-riscv64
 
   # Build Flannel for x86
   build-flannel-x86:
