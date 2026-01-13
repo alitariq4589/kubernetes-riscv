@@ -147,14 +147,13 @@ jobs:
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Create pause Dockerfile
+      - name: Create pause build files
         run: |
           mkdir -p pause-build
           cd pause-build
-          cat > Dockerfile << 'EOF'
-          FROM riscv64/golang:1.22-alpine AS builder
-          WORKDIR /build
-          RUN cat > pause.c << 'PAUSE_C'
+          
+          # Create the C source file
+          cat > pause.c << 'PAUSE_C'
           #include <signal.h>
           #include <stdio.h>
           #include <stdlib.h>
@@ -179,6 +178,12 @@ jobs:
             return 0;
           }
           PAUSE_C
+          
+          # Create the Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM riscv64/golang:1.22-alpine AS builder
+          WORKDIR /build
+          COPY pause.c .
           RUN apk add --no-cache gcc musl-dev && \
               gcc -static -o /pause pause.c && \
               strip /pause
