@@ -19,6 +19,7 @@ on:
 env:
   DOCKER_REGISTRY: docker.io
   DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKER_DEV_ACCOUNT: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   # Get latest Cilium version
@@ -96,24 +97,6 @@ jobs:
               make docker-hubble-relay-image
               ;;
           esac
-
-          # Since we need a 'latest' tag as well, we manually tag and push it here
-          # Note: dev-docker-image creates 'cilium-dev', others create 'cilium-operator-generic' etc.
-          # Adjusting naming to match your intended Hub repo:
-          
-          if [[ "${{ matrix.component }}" == "cilium" ]]; then
-            docker tag ${DOCKER_DEV_ACCOUNT}/cilium-dev:${DOCKER_IMAGE_TAG} ${DOCKER_DEV_ACCOUNT}/cilium:latest-amd64
-            docker push ${DOCKER_DEV_ACCOUNT}/cilium:${DOCKER_IMAGE_TAG}
-            docker push ${DOCKER_DEV_ACCOUNT}/cilium:latest-amd64
-          else
-            # For operator and hubble, the naming convention in Makefile is slightly different
-            # but you can force a push of your specific tag logic:
-            IMAGE_REF="${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}:${DOCKER_IMAGE_TAG}"
-            docker tag ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}-generic-dev:${DOCKER_IMAGE_TAG} ${IMAGE_REF} || true
-            docker tag ${IMAGE_REF} ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}:latest-amd64
-            docker push ${IMAGE_REF}
-            docker push ${DOCKER_DEV_ACCOUNT}/${{ matrix.component }}:latest-amd64
-          fi
 
       - name: Build result
         run: echo "✅ Built ${{ matrix.component }} for x86_64"
