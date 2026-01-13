@@ -238,11 +238,10 @@ jobs:
           # Build the binary for amd64
           make ARCH=${ARCH} TAG=${TAG} dist/flanneld-${TAG}-${ARCH}.docker
 
-          # Load and tag the image
-          docker load -i dist/flanneld-${TAG}-${ARCH}.docker
+          LOAD_OUTPUT=$(docker load -i dist/flanneld-${TAG}-${ARCH}.docker)
+          echo "$LOAD_OUTPUT"
 
-          # Get the loaded image name from the docker output
-          LOADED_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "flanneld" | grep "${TAG}-${ARCH}" | head -1)
+          LOADED_IMAGE=$(echo "$LOAD_OUTPUT" | sed -n 's/^Loaded image: //p')
 
           # Tag the images
           docker tag ${LOADED_IMAGE} ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
