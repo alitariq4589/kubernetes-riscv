@@ -17,7 +17,7 @@ on:
       - '.github/workflows/build-cilium-images.yml'
 
 env:
-  REGISTRY: docker.io
+  DOCKER_REGISTRY: docker.io
   DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
