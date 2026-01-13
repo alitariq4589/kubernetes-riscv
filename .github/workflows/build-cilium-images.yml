@@ -184,17 +184,29 @@ jobs:
         run: |
           cd cilium
           
+          # 1. Define your architecture and registry
+          export ARCH=riscv64
+          export DOCKER_DEV_ACCOUNT="${{ env.DOCKERHUB_REPO }}"
+          export DOCKER_IMAGE_TAG="${{ needs.get-versions.outputs.cilium_tag }}-riscv64"
+          
+          # 2. Build the base images first (required for RISC-V)
+          # These will be tagged as local/cilium-builder and local/cilium-runtime
+          make -C images builder-image ARCH=riscv64
+          make -C images runtime-image ARCH=riscv64
+
+          # 3. Override the image variables so the build uses your local bases
+          # We point them to the tags created by the steps above
+          export CILIUM_BUILDER_IMAGE=local/cilium-builder:latest
+          export CILIUM_RUNTIME_IMAGE=local/cilium-runtime:latest
+
           case "${{ matrix.component }}" in
             cilium)
-              # Standard target for the Cilium Agent
               make dev-docker-image
               ;;
             operator)
-              # Standard target for the Generic Operator
               make docker-operator-generic-image
               ;;
             hubble-relay)
-              # Standard target for Hubble Relay
               make docker-hubble-relay-image
               ;;
           esac
