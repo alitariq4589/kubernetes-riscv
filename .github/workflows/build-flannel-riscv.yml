@@ -186,7 +186,7 @@ jobs:
           COPY --from=builder /pause /pause
           ENTRYPOINT ["/pause"]
           EOF
-          
+
             - name: Build and push pause for RISC-V
               run: |
                 cd pause-build
@@ -263,12 +263,26 @@ jobs:
       - name: Build and push Flannel for RISC-V
         run: |
           cd flannel
-          docker build \
-            --tag ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64 \
-            .
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64
-          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
+
+          # Set variables
+          TAG="${{ needs.get-versions.outputs.flannel_tag }}"
+          ARCH="riscv64"
+
+          # Build the binary for riscv64
+          make ARCH=${ARCH} TAG=${TAG} dist/flanneld-${TAG}-${ARCH}.docker
+
+          LOAD_OUTPUT=$(docker load -i dist/flanneld-${TAG}-${ARCH}.docker)
+          echo "$LOAD_OUTPUT"
+
+          LOADED_IMAGE=$(echo "$LOAD_OUTPUT" | sed -n 's/^Loaded image: //p')
+
+          # Tag the images
+          docker tag ${LOADED_IMAGE} ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
+          docker tag ${LOADED_IMAGE} ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
+
+          # Push the images
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
 
   # Create multi-arch manifests
   create-manifests:
