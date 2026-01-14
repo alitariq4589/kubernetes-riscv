@@ -166,6 +166,10 @@ jobs:
           EOF
           
           # Copy binary
+          ls -la
+          ls _output/bin/
+          ls _output/*
+
           cp _output/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
           # Build and push
