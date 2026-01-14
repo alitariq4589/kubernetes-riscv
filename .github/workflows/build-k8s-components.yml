@@ -143,7 +143,6 @@ jobs:
 
       - name: Build ${{ matrix.component }} for RISC-V
         run: |
-          set -x
           
           cd kubernetes
           
@@ -167,10 +166,16 @@ jobs:
           EOF
           
           # Copy binary
+          echo "printing _output contents for debugging"
           ls -la
+          echo "printing _output/bin contents for debugging"
           ls _output/bin/
+          echo "printing _output/*/* contents for debugging"
           ls _output/*/*
+          echo "printing _output/local/* contents for debugging"
           ls _output/local/*
+          echo "Searching for built binary:"
+          find _output -name "${{ matrix.component }}" -type f
 
           cp _output/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
