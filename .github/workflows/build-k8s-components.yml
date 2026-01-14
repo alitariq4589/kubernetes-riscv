@@ -143,6 +143,7 @@ jobs:
 
       - name: Build ${{ matrix.component }} for RISC-V
         run: |
+          set -x
           
           cd kubernetes
           
@@ -168,7 +169,8 @@ jobs:
           # Copy binary
           ls -la
           ls _output/bin/
-          ls _output/*
+          ls _output/*/*
+          ls _output/local/*
 
           cp _output/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
