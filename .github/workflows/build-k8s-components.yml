@@ -166,16 +166,8 @@ jobs:
           EOF
           
           # Copy binary
-          echo "printing _output contents for debugging"
-          ls -la
-          echo "printing _output/*/* contents for debugging"
-          ls _output/*
-          echo "printing _output/local/* contents for debugging"
-          ls _output/local/*
-          echo "Searching for built binary:"
-          find _output -name "${{ matrix.component }}" -type f
 
-          cp _output/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
+          cp _output/local/go/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
           # Build and push
           cd /tmp/${{ matrix.component }}-build
