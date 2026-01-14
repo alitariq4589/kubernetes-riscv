@@ -132,7 +132,7 @@ jobs:
 
       - name: Clone Kubernetes repository
         run: |
-          rm -rf kubernetes
+          sudo rm -rf kubernetes
           git clone --depth=1 --branch ${{ needs.get-versions.outputs.k8s_version }} https://github.com/kubernetes/kubernetes.git
 
       - name: Build ${{ matrix.component }} for RISC-V
