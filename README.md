@@ -52,7 +52,9 @@ sudo chmod +x /usr/bin/kube*
 ```
 
 
-# Kubernetes with Flannel - Complete Setup Guide
+# Complete guide for setting up Kubernetes with Flannel
+
+Use this guide after you have installed the binaries and set them up using above commands. This sets up Kubernetes with Control plane on x86 and worker nodes on riscv64
 
 ## Images
 
