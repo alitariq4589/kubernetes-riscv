@@ -76,7 +76,7 @@ These are available at: https://github.com/alitariq4589/kubernetes-riscv/release
 
 ```bash
 # Download the script
-wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/setup-control-plane.sh
+wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/control-plane-setup.sh
 chmod +x setup-control-plane.sh
 
 # Run it
@@ -106,7 +106,7 @@ Copy this entire command.
 
 ```bash
 # Download the script
-wget https://raw.githubusercontent.com/YOUR_REPO/main/setup-worker.sh
+wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/worker-node-setup.sh
 chmod +x setup-worker.sh
 
 # Run it with the join command
