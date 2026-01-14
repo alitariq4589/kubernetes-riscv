@@ -96,9 +96,9 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 echo "Configuring custom pause image..."
 
 # Detect containerd version
-CONTAINERD_VERSION=$(containerd --version | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
-CONTAINERD_MAJOR=$(echo "$CONTAINERD_VERSION" | cut -d. -f1)
-CONTAINERD_MINOR=$(echo "$CONTAINERD_VERSION" | cut -d. -f2)
+CONTAINERD_VERSION=$(containerd --version | awk '{print $3}')
+CONTAINERD_MAJOR=${CONTAINERD_VERSION%%.*}
+CONTAINERD_MINOR=${CONTAINERD_VERSION#*.}
 
 echo "Detected containerd version: ${CONTAINERD_MAJOR}.${CONTAINERD_MINOR}"
 
