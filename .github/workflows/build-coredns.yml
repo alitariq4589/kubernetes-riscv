@@ -127,47 +127,45 @@ jobs:
 
       - name: Build CoreDNS for RISC-V
         run: |
-          export PATH=/usr/local/go/bin:$PATH
-          export GOPATH=$HOME/go
-          
+
           cd coredns
-          
+
           # Build CoreDNS for RISC-V
           GOARCH=riscv64 make
-          
+
           # Create Dockerfile
           mkdir -p /tmp/coredns-build
-          
+
           cat > /tmp/coredns-build/Dockerfile << 'EOF'
           FROM riscv64/debian:trixie-slim
-          
+
           RUN echo "deb https://ftp.debian.org/debian trixie contrib main non-free non-free-firmware" > /etc/apt/sources.list && \
-          echo "deb https://ftp.debian.org/debian trixie-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.      list && \
-          echo "deb https://ftp.debian.org/debian trixie-proposed-updates main contrib non-free non-free-firmware" >> /etc/apt/     sources.list && \
-          echo "deb https://ftp.debian.org/debian trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list &&       \
+          echo "deb https://ftp.debian.org/debian trixie-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+          echo "deb https://ftp.debian.org/debian trixie-proposed-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+          echo "deb https://ftp.debian.org/debian trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
           apt-get update && \
           apt-get install -y ca-certificates && \
           rm -rf /var/lib/apt/lists/*
-          
+
           COPY coredns /coredns
-          
+
           RUN chmod +x /coredns
-          
+
           EXPOSE 53 53/udp
-          
+
           ENTRYPOINT ["/coredns"]
           EOF
-          
+
           # Copy binary
           cp coredns /tmp/coredns-build/
-          
+
           # Build and push
           cd /tmp/coredns-build
           docker build \
             --tag ${{ env.DOCKERHUB_REPO }}/coredns:${{ needs.get-versions.outputs.coredns_tag }}-riscv64 \
             --tag ${{ env.DOCKERHUB_REPO }}/coredns:latest-riscv64 \
             .
-          
+
           docker push ${{ env.DOCKERHUB_REPO }}/coredns:${{ needs.get-versions.outputs.coredns_tag }}-riscv64
           docker push ${{ env.DOCKERHUB_REPO }}/coredns:latest-riscv64
 
