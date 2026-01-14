@@ -76,7 +76,7 @@ jobs:
           mkdir -p /tmp/coredns-build
           
           cat > /tmp/coredns-build/Dockerfile << 'EOF'
-          FROM debian:stable-slim
+          FROM debian:trixie-slim
           
           RUN apt-get update && \
               apt-get install -y ca-certificates && \
@@ -139,7 +139,7 @@ jobs:
           mkdir -p /tmp/coredns-build
           
           cat > /tmp/coredns-build/Dockerfile << 'EOF'
-          FROM riscv64/debian:stable-slim
+          FROM riscv64/debian:trixie-slim
           
           RUN apt-get update && \
               apt-get install -y ca-certificates && \
