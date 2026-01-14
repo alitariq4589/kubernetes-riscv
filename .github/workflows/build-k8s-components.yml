@@ -132,7 +132,13 @@ jobs:
 
       - name: Clone Kubernetes repository
         run: |
-          sudo rm -rf kubernetes
+          if [ -d "kubernetes" ]; then
+            cd kubernetes
+            go clean -modcache 2>/dev/null || true  # Clean Go cache properly
+            cd ..
+            chmod -R u+w kubernetes
+            rm -rf kubernetes
+          fi
           git clone --depth=1 --branch ${{ needs.get-versions.outputs.k8s_version }} https://github.com/kubernetes/kubernetes.git
 
       - name: Build ${{ matrix.component }} for RISC-V
