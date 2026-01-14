@@ -135,8 +135,6 @@ jobs:
 
       - name: Build ${{ matrix.component }} for RISC-V
         run: |
-          export PATH=/usr/local/go/bin:$PATH
-          export GOPATH=$HOME/go
           
           cd kubernetes
           
