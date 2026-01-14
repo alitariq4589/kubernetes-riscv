@@ -70,7 +70,7 @@ jobs:
           cd etcd
           
           # Build etcd and etcdctl
-          ./build.sh
+          ./scripts/build.sh
           
           # Create Dockerfile
           mkdir -p /tmp/etcd-build
@@ -140,7 +140,7 @@ jobs:
           cd etcd
           
           # Build etcd and etcdctl for RISC-V
-          GOARCH=riscv64 ./build.sh
+          GOARCH=riscv64 ./scripts/build.sh
           
           # Create Dockerfile
           mkdir -p /tmp/etcd-build
