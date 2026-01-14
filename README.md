@@ -67,7 +67,7 @@ These are available at: https://github.com/alitariq4589/kubernetes-riscv/release
 ## Scripts Provided
 
 1. **setup-control-plane.sh** - Sets up x86 control plane with custom images
-2. **setup-worker.sh** - Sets up worker nodes (x86 or RISC-V) with custom images
+2. **worker-node-setup.sh** - Sets up worker nodes (x86 or RISC-V) with custom images
 3. **cleanup.sh** - Complete cleanup of Kubernetes installation
 
 ## Quick Start
@@ -107,10 +107,10 @@ Copy this entire command.
 ```bash
 # Download the script
 wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/worker-node-setup.sh
-chmod +x setup-worker.sh
+chmod +x worker-node-setup.sh
 
 # Run it with the join command
-./setup-worker.sh kubeadm join 192.168.20.59:6443 --token abc123... --discovery-token-ca-cert-hash sha256:xyz...
+./worker-node-setup.sh kubeadm join 192.168.20.59:6443 --token abc123... --discovery-token-ca-cert-hash sha256:xyz...
 ```
 
 The script will:
