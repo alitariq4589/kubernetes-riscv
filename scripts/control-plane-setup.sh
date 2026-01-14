@@ -111,18 +111,18 @@ echo ""
 
 # --- INSTALL KUBERNETES ---
 echo "Step 3: Installing Kubernetes..."
+echo "Skipping Kubernetes installation - assuming kubeadm, kubelet, and kubectl are already installed from above steps."
+# # Add Kubernetes repository
+# sudo mkdir -p /etc/apt/keyrings
+# curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+# echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-# Add Kubernetes repository
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+# sudo apt-get update
+# sudo apt-get install -y kubelet kubeadm kubectl
+# sudo apt-mark hold kubelet kubeadm kubectl
 
-sudo apt-get update
-sudo apt-get install -y kubelet kubeadm kubectl
-sudo apt-mark hold kubelet kubeadm kubectl
-
-echo "✓ Kubernetes installed"
-echo ""
+# echo "✓ Kubernetes installed"
+# echo ""
 
 # --- INITIALIZE CONTROL PLANE ---
 echo "Step 4: Initializing Kubernetes control plane..."
