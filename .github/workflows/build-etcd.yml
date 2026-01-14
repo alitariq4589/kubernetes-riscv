@@ -125,11 +125,7 @@ jobs:
 
       - name: Setup Go
         run: |
-          GO_VERSION=$(curl -s https://go.dev/VERSION?m=text | head -n1)
-          wget -q https://go.dev/dl/${GO_VERSION}.linux-riscv64.tar.gz
-          sudo rm -rf /usr/local/go
-          sudo tar -C /usr/local -xzf ${GO_VERSION}.linux-riscv64.tar.gz
-          rm ${GO_VERSION}.linux-riscv64.tar.gz
+          sudo apt update && sudo apt install -y golang
 
       - name: Clone etcd repository
         run: |
