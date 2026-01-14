@@ -84,7 +84,7 @@ jobs:
           mkdir -p /tmp/${{ matrix.component }}-build
           
           cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
-          FROM debian:bookworm-slim
+          FROM debian:stable-slim
           
           RUN apt-get update && \
               apt-get install -y ca-certificates && \
@@ -147,7 +147,7 @@ jobs:
           mkdir -p /tmp/${{ matrix.component }}-build
           
           cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
-          FROM riscv64/debian:bookworm-slim
+          FROM riscv64/debian:stable-slim
           
           RUN apt-get update && \
               apt-get install -y ca-certificates && \
