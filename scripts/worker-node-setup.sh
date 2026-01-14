@@ -94,11 +94,89 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 
 # *** CRITICAL: Configure custom pause image ***
 echo "Configuring custom pause image..."
-sudo sed -i "s|sandbox_image = .*|sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"|g" /etc/containerd/config.toml
 
-# Verify pause image configuration
+# Detect containerd version
+CONTAINERD_VERSION=$(containerd --version | grep -oP 'v\K[0-9]+\.[0-9]+' | head -1)
+CONTAINERD_MAJOR=$(echo "$CONTAINERD_VERSION" | cut -d. -f1)
+CONTAINERD_MINOR=$(echo "$CONTAINERD_VERSION" | cut -d. -f2)
+
+echo "Detected containerd version: ${CONTAINERD_MAJOR}.${CONTAINERD_MINOR}"
+
+# Configure based on version
+if [ "$CONTAINERD_MAJOR" -ge 2 ]; then
+    echo "Using containerd v2.x configuration format..."
+    
+    # For containerd v2.x, use pinned_images.sandbox
+    if grep -q "pinned_images" /etc/containerd/config.toml; then
+        echo "Found pinned_images section, updating..."
+        sudo sed -i "s|sandbox = '.*'|sandbox = '${DOCKERHUB_USER}/pause:${PAUSE_VERSION}'|g" /etc/containerd/config.toml
+        
+        # Verify it worked
+        if grep -q "sandbox = '${DOCKERHUB_USER}/pause:${PAUSE_VERSION}'" /etc/containerd/config.toml; then
+            echo "✓ Successfully configured pinned_images.sandbox"
+        else
+            echo "ERROR: Failed to update pinned_images.sandbox"
+            echo "Current configuration:"
+            grep -A2 "pinned_images" /etc/containerd/config.toml || echo "pinned_images section not found"
+            echo ""
+            echo "Please update the configuration manually:"
+            echo "  sudo nano /etc/containerd/config.toml"
+            echo "  Find: sandbox = 'registry.k8s.io/pause:3.10'"
+            echo "  Replace with: sandbox = '${DOCKERHUB_USER}/pause:${PAUSE_VERSION}'"
+            exit 1
+        fi
+    else
+        echo "ERROR: pinned_images section not found in config"
+        echo "This is unexpected for containerd v2.x"
+        echo "Please check your containerd configuration manually"
+        exit 1
+    fi
+    
+elif [ "$CONTAINERD_MAJOR" -eq 1 ]; then
+    echo "Using containerd v1.x configuration format..."
+    
+    # For containerd v1.x, use sandbox_image
+    if grep -q "sandbox_image" /etc/containerd/config.toml; then
+        echo "Found sandbox_image, updating..."
+        sudo sed -i "s|sandbox_image = \".*\"|sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"|g" /etc/containerd/config.toml
+        
+        # Verify it worked
+        if grep -q "sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"" /etc/containerd/config.toml; then
+            echo "✓ Successfully configured sandbox_image"
+        else
+            echo "ERROR: Failed to update sandbox_image"
+            echo "Current configuration:"
+            grep "sandbox_image" /etc/containerd/config.toml || echo "sandbox_image not found"
+            echo ""
+            echo "Please update the configuration manually:"
+            echo "  sudo nano /etc/containerd/config.toml"
+            echo "  Find: sandbox_image = \"registry.k8s.io/pause:3.10\""
+            echo "  Replace with: sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\""
+            exit 1
+        fi
+    else
+        echo "ERROR: sandbox_image not found in config"
+        echo "This is unexpected for containerd v1.x"
+        echo "Please check your containerd configuration manually"
+        exit 1
+    fi
+    
+else
+    echo "ERROR: Unable to determine containerd version"
+    echo "Detected version: ${CONTAINERD_VERSION}"
+    echo "Please configure the pause image manually"
+    exit 1
+fi
+
+# Display final configuration
+echo ""
 echo "Verifying pause image configuration:"
-grep sandbox_image /etc/containerd/config.toml
+if [ "$CONTAINERD_MAJOR" -ge 2 ]; then
+    sudo grep -A2 "pinned_images" /etc/containerd/config.toml | grep sandbox
+else
+    sudo grep "sandbox_image" /etc/containerd/config.toml
+fi
+echo ""
 
 sudo systemctl restart containerd
 sudo systemctl enable containerd
@@ -261,7 +339,11 @@ sudo systemctl status kubelet --no-pager -l | head -20
 echo ""
 
 echo "Pause image configuration:"
-sudo grep sandbox_image /etc/containerd/config.toml
+if [ "$CONTAINERD_MAJOR" -ge 2 ]; then
+    sudo grep -A2 "pinned_images" /etc/containerd/config.toml | grep sandbox
+else
+    sudo grep "sandbox_image" /etc/containerd/config.toml
+fi
 echo ""
 
 echo "CNI plugins installed:"
@@ -281,8 +363,13 @@ echo "2. Check Flannel pods:"
 echo "   kubectl get pods -n kube-flannel -o wide"
 echo ""
 echo "3. If you see pause container errors:"
-echo "   - Verify: sudo grep sandbox_image /etc/containerd/config.toml"
-echo "   - Should show: ${DOCKERHUB_USER}/pause:${PAUSE_VERSION}"
+if [ "$CONTAINERD_MAJOR" -ge 2 ]; then
+    echo "   - Verify: sudo grep -A2 'pinned_images' /etc/containerd/config.toml"
+    echo "   - Should show: sandbox = '${DOCKERHUB_USER}/pause:${PAUSE_VERSION}'"
+else
+    echo "   - Verify: sudo grep sandbox_image /etc/containerd/config.toml"
+    echo "   - Should show: sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\""
+fi
 echo "   - Restart: sudo systemctl restart containerd && sudo systemctl restart kubelet"
 echo ""
 echo "4. Monitor kubelet logs:"
