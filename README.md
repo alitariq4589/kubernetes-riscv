@@ -39,13 +39,13 @@ sudo rm -f /usr/bin/kubelet
 ## Place binaries at appropriate place
 ```
 # Copy new binaries
-sudo cp ~/k8s-custom/kubectl /usr/bin/
-sudo cp ~/k8s-custom/kubeadm /usr/bin/
-sudo cp ~/k8s-custom/kubelet /usr/bin/
-sudo cp ~/k8s-custom/kube-proxy /usr/bin/
-sudo cp ~/k8s-custom/kube-apiserver /usr/bin/
-sudo cp ~/k8s-custom/kube-controller-manager /usr/bin/
-sudo cp ~/k8s-custom/kube-scheduler /usr/bin/
+sudo cp ~/k8s-custom/bin/kubectl /usr/bin/
+sudo cp ~/k8s-custom/bin/kubeadm /usr/bin/
+sudo cp ~/k8s-custom/bin/kubelet /usr/bin/
+sudo cp ~/k8s-custom/bin/kube-proxy /usr/bin/
+sudo cp ~/k8s-custom/bin/kube-apiserver /usr/bin/
+sudo cp ~/k8s-custom/bin/kube-controller-manager /usr/bin/
+sudo cp ~/k8s-custom/bin/kube-scheduler /usr/bin/
 
 # Set proper permissions
 sudo chmod +x /usr/bin/kube*
