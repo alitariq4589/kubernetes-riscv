@@ -66,21 +66,42 @@ These are available at: https://github.com/alitariq4589/kubernetes-riscv/release
 
 ## Scripts Provided
 
-1. **setup-control-plane.sh** - Sets up x86 control plane with custom images
+1. **control-plane-setup-x86.sh** - Sets up x86 control plane with custom images
 2. **worker-node-setup.sh** - Sets up worker nodes (x86 or RISC-V) with custom images
 3. **cleanup.sh** - Complete cleanup of Kubernetes installation
 
 ## Quick Start
 
-### Step 1: Set Up Control Plane (x86 machine)
+### Step 1: Set Up Control Plane
+
+##### For x86:
 
 ```bash
 # Download the script
-wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/control-plane-setup.sh
-chmod +x setup-control-plane.sh
+wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/control-plane-setup-x86.sh
+chmod +x control-plane-setup-x86.sh
 
 # Run it
-./setup-control-plane.sh
+./control-plane-setup-x86.sh
+```
+
+The script will:
+- Clean up any existing Kubernetes installation
+- Install and configure containerd with your custom pause image
+- Install Kubernetes
+- Initialize the control plane
+- Install Flannel via Helm with your custom images
+
+
+##### For riscv64:
+
+```bash
+# Download the script
+wget https://raw.githubusercontent.com/alitariq4589/kubernetes-riscv/main/scripts/control-plane-setup-riscv64.sh
+chmod +x control-plane-setup-riscv64.sh
+
+# Run it
+./control-plane-setup-riscv64.sh
 ```
 
 The script will:
