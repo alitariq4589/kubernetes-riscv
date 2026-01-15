@@ -11,7 +11,7 @@ K8S_VERSION="1.35.0"        # Kubernetes version
 PAUSE_VERSION="3.10"        # Pause container version
 FLANNEL_VERSION="0.28.0"    # Flannel version
 ETCD_VERSION="3.6.6"        # etcd version (MUST match what kubeadm expects: 3.6.6-0)
-COREDNS_VERSION="1.13.1"    # CoreDNS version (default for K8s 1.35)
+COREDNS_VERSION="1.14.1"    # CoreDNS version (default for K8s 1.35)
 
 set -e  # Exit on any error
 
