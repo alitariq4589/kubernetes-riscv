@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================
-# Control Plane Setup with Custom Flannel
+# Control Plane Setup for x86 with Custom Flannel
 # ============================================
 
 # Configuration - CHANGE THE VERSIONS AS NEEDED FROM THE RELEASES
@@ -12,7 +12,7 @@ FLANNEL_VERSION="0.28.0"
 set -e  # Exit on any error
 
 echo "============================================"
-echo "Kubernetes Control Plane Setup"
+echo "Kubernetes Control Plane Setup (x86)"
 echo "============================================"
 echo ""
 echo "Using custom images:"
@@ -22,6 +22,9 @@ echo ""
 
 # --- CLEANUP SECTION ---
 echo "Step 1: Cleaning up existing Kubernetes installation..."
+
+# Stop kubelet service if running
+sudo systemctl stop kubelet 2>/dev/null || true
 
 # Reset kubeadm
 sudo kubeadm reset -f 2>/dev/null || true
@@ -109,23 +112,93 @@ sudo sysctl --system
 echo "✓ System configured"
 echo ""
 
-# --- INSTALL KUBERNETES ---
-echo "Step 3: Installing Kubernetes..."
-echo "Skipping Kubernetes installation - assuming kubeadm, kubelet, and kubectl are already installed from above steps."
-# # Add Kubernetes repository
-# sudo mkdir -p /etc/apt/keyrings
-# curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-# echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+# --- SETUP KUBELET SERVICE (for manual binary installations) ---
+echo "Step 3: Setting up kubelet systemd service..."
 
-# sudo apt-get update
-# sudo apt-get install -y kubelet kubeadm kubectl
-# sudo apt-mark hold kubelet kubeadm kubectl
+# Check if kubelet is already installed via package manager
+if dpkg -l | grep -q kubelet; then
+    echo "kubelet package detected - skipping manual service setup"
+else
+    echo "Setting up kubelet service for manually installed binaries..."
+    
+    # Create kubelet service file
+    sudo mkdir -p /etc/systemd/system/kubelet.service.d
 
-# echo "✓ Kubernetes installed"
-# echo ""
+    cat <<'KUBELET_SERVICE' | sudo tee /etc/systemd/system/kubelet.service
+[Unit]
+Description=kubelet: The Kubernetes Node Agent
+Documentation=https://kubernetes.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/kubelet
+Restart=always
+StartLimitInterval=0
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+KUBELET_SERVICE
+
+    # Create kubelet drop-in configuration
+    cat <<'KUBELET_DROPIN' | sudo tee /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+# Note: This dropin only works with kubeadm and kubelet v1.11+
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+# This is a file that "kubeadm init" and "kubeadm join" generates at runtime, populating the KUBELET_KUBEADM_ARGS variable dynamically
+EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+# This is a file that the user can use for overrides of the kubelet args as a last resort. Preferably, the user should use
+# the .NodeRegistration.KubeletExtraArgs object in the configuration files instead. KUBELET_EXTRA_ARGS should be sourced from this file.
+EnvironmentFile=-/etc/default/kubelet
+ExecStart=
+ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+KUBELET_DROPIN
+
+    # Create kubelet defaults file
+    sudo mkdir -p /etc/default
+    cat <<'KUBELET_DEFAULTS' | sudo tee /etc/default/kubelet
+# Additional kubelet arguments
+KUBELET_EXTRA_ARGS=
+KUBELET_DEFAULTS
+
+    # Create required directories
+    sudo mkdir -p /var/lib/kubelet
+    sudo mkdir -p /etc/kubernetes/manifests
+    sudo mkdir -p /etc/kubernetes/pki
+
+    # Enable kubelet service
+    sudo systemctl daemon-reload
+    sudo systemctl enable kubelet
+    
+    echo "✓ kubelet service configured"
+fi
+
+echo ""
+
+# --- INSTALL KUBERNETES (if using package manager) ---
+echo "Step 4: Checking Kubernetes installation..."
+if command -v kubeadm &> /dev/null && command -v kubelet &> /dev/null && command -v kubectl &> /dev/null; then
+    echo "Kubernetes binaries found - skipping installation"
+else
+    echo "Installing Kubernetes from repository..."
+    # Add Kubernetes repository
+    sudo mkdir -p /etc/apt/keyrings
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+    sudo apt-get update
+    sudo apt-get install -y kubelet kubeadm kubectl
+    sudo apt-mark hold kubelet kubeadm kubectl
+
+    echo "✓ Kubernetes installed"
+fi
+
+echo ""
 
 # --- INITIALIZE CONTROL PLANE ---
-echo "Step 4: Initializing Kubernetes control plane..."
+echo "Step 5: Initializing Kubernetes control plane..."
 
 sudo kubeadm init --pod-network-cidr=10.244.0.0/16
 
@@ -138,7 +211,7 @@ echo "✓ Control plane initialized"
 echo ""
 
 # --- INSTALL HELM ---
-echo "Step 5: Installing Helm..."
+echo "Step 6: Installing Helm..."
 
 if ! command -v helm &> /dev/null; then
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -148,7 +221,7 @@ echo "✓ Helm installed"
 echo ""
 
 # --- INSTALL FLANNEL WITH CUSTOM IMAGES ---
-echo "Step 6: Installing Flannel with custom images..."
+echo "Step 7: Installing Flannel with custom images..."
 
 # Add Flannel Helm repo
 helm repo add flannel https://flannel-io.github.io/flannel/
@@ -170,7 +243,7 @@ echo "✓ Flannel installed"
 echo ""
 
 # Wait for Flannel to be ready
-echo "Step 7: Waiting for Flannel to be ready..."
+echo "Step 8: Waiting for Flannel to be ready..."
 sleep 20
 
 # Check status
@@ -187,6 +260,9 @@ echo ""
 echo "Flannel Pods:"
 kubectl get pods -n kube-flannel
 echo ""
+echo "All Pods:"
+kubectl get pods --all-namespaces
+echo ""
 echo "============================================"
 echo "To join worker nodes:"
 echo "============================================"
@@ -195,7 +271,14 @@ echo "1. Get the join command:"
 echo ""
 sudo kubeadm token create --print-join-command
 echo ""
-echo "2. Run the setup-worker.sh script on each worker node"
+echo "2. Run the worker-node-setup.sh script on each worker node"
 echo "   with the join command above"
 echo ""
+echo "============================================"
+echo ""
+echo "Useful Commands:"
+echo "  kubectl get nodes                  # Check node status"
+echo "  kubectl get pods -A                # Check all pods"
+echo "  sudo systemctl status kubelet      # Check kubelet service"
+echo "  sudo journalctl -u kubelet -f      # View kubelet logs"
 echo "============================================"

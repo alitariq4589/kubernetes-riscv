@@ -1,19 +1,17 @@
 #!/bin/bash
 
 # ============================================
-# Control Plane Setup with Custom Images
+# Complete Control Plane Setup with Custom Images
 # for RISC-V Kubernetes Cluster
 # ============================================
 
-set -x
-
-# Configuration - CHANGE THE VERSIONS AS NEEDED FROM THE RELEASES
+# Configuration - EXACT VERSIONS REQUIRED BY KUBERNETES v1.35.0
 DOCKERHUB_USER="cloudv10x"  # Your DockerHub username
 K8S_VERSION="1.35.0"        # Kubernetes version
 PAUSE_VERSION="3.10"        # Pause container version
 FLANNEL_VERSION="0.28.0"    # Flannel version
-ETCD_VERSION="3.6.6"       # etcd version (check registry.k8s.io for compatible version)
-COREDNS_VERSION="1.14.0"    # CoreDNS version
+ETCD_VERSION="3.6.6"        # etcd version (MUST match what kubeadm expects: 3.6.6-0)
+COREDNS_VERSION="1.13.1"    # CoreDNS version (default for K8s 1.35)
 
 set -e  # Exit on any error
 
@@ -35,6 +33,9 @@ echo ""
 
 # --- CLEANUP SECTION ---
 echo "Step 1: Cleaning up existing Kubernetes installation..."
+
+# Stop kubelet service if running
+sudo systemctl stop kubelet 2>/dev/null || true
 
 # Reset kubeadm
 sudo kubeadm reset -f 2>/dev/null || true
@@ -122,22 +123,67 @@ sudo sysctl --system
 echo "✓ System configured"
 echo ""
 
+# --- SETUP KUBELET SERVICE ---
+echo "Step 3: Setting up kubelet systemd service..."
+
+# Create kubelet service file - using /usr/bin for RISC-V manual installs
+sudo mkdir -p /etc/systemd/system/kubelet.service.d
+
+cat <<'KUBELET_SERVICE' | sudo tee /etc/systemd/system/kubelet.service
+[Unit]
+Description=kubelet: The Kubernetes Node Agent
+Documentation=https://kubernetes.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/kubelet
+Restart=always
+StartLimitInterval=0
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+KUBELET_SERVICE
+
+# Create kubelet drop-in configuration
+cat <<'KUBELET_DROPIN' | sudo tee /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+# Note: This dropin only works with kubeadm and kubelet v1.11+
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+# This is a file that "kubeadm init" and "kubeadm join" generates at runtime, populating the KUBELET_KUBEADM_ARGS variable dynamically
+EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+# This is a file that the user can use for overrides of the kubelet args as a last resort. Preferably, the user should use
+# the .NodeRegistration.KubeletExtraArgs object in the configuration files instead. KUBELET_EXTRA_ARGS should be sourced from this file.
+EnvironmentFile=-/etc/default/kubelet
+ExecStart=
+ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+KUBELET_DROPIN
+
+# Create kubelet defaults file
+sudo mkdir -p /etc/default
+cat <<'KUBELET_DEFAULTS' | sudo tee /etc/default/kubelet
+# Additional kubelet arguments
+KUBELET_EXTRA_ARGS=
+KUBELET_DEFAULTS
+
+# Create required directories
+sudo mkdir -p /var/lib/kubelet
+sudo mkdir -p /etc/kubernetes/manifests
+sudo mkdir -p /etc/kubernetes/pki
+
+# Enable kubelet service
+sudo systemctl daemon-reload
+sudo systemctl enable kubelet
+
+echo "✓ kubelet service configured"
+echo ""
+
 # --- PRE-PULL CUSTOM IMAGES ---
-echo "Step 3: Pre-pulling custom Kubernetes images..."
+echo "Step 4: Pre-pulling custom Kubernetes images..."
 
 echo "Pulling custom images from ${DOCKERHUB_USER}..."
-# Adding custom function
-
-ctr_retag() {
-    local src="$1"
-    local dst="$2"
-
-    # Remove destination tag if it already exists
-    sudo ctr -n k8s.io images rm "$dst" 2>/dev/null || true
-
-    # Re-tag
-    sudo ctr -n k8s.io images tag "$src" "$dst"
-}
 
 # Pull all required images
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/pause:${PAUSE_VERSION}
@@ -151,32 +197,32 @@ sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VER
 # Tag images to match what kubeadm expects
 echo "Tagging images for kubeadm..."
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/kube-apiserver:${K8S_VERSION} \
   registry.k8s.io/kube-apiserver:v${K8S_VERSION}
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/kube-controller-manager:${K8S_VERSION} \
   registry.k8s.io/kube-controller-manager:v${K8S_VERSION}
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/kube-scheduler:${K8S_VERSION} \
   registry.k8s.io/kube-scheduler:v${K8S_VERSION}
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION} \
   registry.k8s.io/kube-proxy:v${K8S_VERSION}
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION} \
   registry.k8s.io/etcd:${ETCD_VERSION}-0
 
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VERSION} \
   registry.k8s.io/coredns/coredns:v${COREDNS_VERSION}
 
 # Also tag pause image
-ctr_retag \
+sudo ctr -n k8s.io images tag \
   docker.io/${DOCKERHUB_USER}/pause:${PAUSE_VERSION} \
   registry.k8s.io/pause:${PAUSE_VERSION}.1
 
@@ -189,7 +235,7 @@ sudo ctr -n k8s.io images ls | grep -E "kube-|etcd|coredns|pause"
 echo ""
 
 # --- INITIALIZE CONTROL PLANE ---
-echo "Step 4: Initializing Kubernetes control plane..."
+echo "Step 5: Initializing Kubernetes control plane..."
 
 sudo kubeadm init \
   --pod-network-cidr=10.244.0.0/16 \
@@ -204,7 +250,7 @@ echo "✓ Control plane initialized"
 echo ""
 
 # --- INSTALL HELM ---
-echo "Step 5: Installing Helm..."
+echo "Step 6: Installing Helm..."
 
 if ! command -v helm &> /dev/null; then
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -214,7 +260,7 @@ echo "✓ Helm installed"
 echo ""
 
 # --- INSTALL FLANNEL WITH CUSTOM IMAGES ---
-echo "Step 6: Installing Flannel with custom images..."
+echo "Step 7: Installing Flannel with custom images..."
 
 # Add Flannel Helm repo
 helm repo add flannel https://flannel-io.github.io/flannel/
@@ -236,7 +282,7 @@ echo "✓ Flannel installed"
 echo ""
 
 # Wait for Flannel to be ready
-echo "Step 7: Waiting for Flannel to be ready..."
+echo "Step 8: Waiting for Flannel to be ready..."
 sleep 20
 
 # Check status
@@ -278,4 +324,11 @@ echo "  ${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION}"
 echo "  ${DOCKERHUB_USER}/etcd:${ETCD_VERSION}"
 echo "  ${DOCKERHUB_USER}/coredns:${COREDNS_VERSION}"
 echo "  ${DOCKERHUB_USER}/flannel:${FLANNEL_VERSION}"
+echo "============================================"
+echo ""
+echo "Useful Commands:"
+echo "  kubectl get nodes                  # Check node status"
+echo "  kubectl get pods -A                # Check all pods"
+echo "  sudo systemctl status kubelet      # Check kubelet service"
+echo "  sudo journalctl -u kubelet -f      # View kubelet logs"
 echo "============================================"
