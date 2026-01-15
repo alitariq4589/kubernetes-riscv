@@ -159,27 +159,15 @@ jobs:
           RUN chmod +x /usr/local/bin/etcd* && \
               mkdir -p /var/etcd /var/lib/etcd
           
+          # SET THE UNSUPPORTED ARCH ENV VAR
+          ENV ETCD_UNSUPPORTED_ARCH=riscv64
+          
           EXPOSE 2379 2380
           
           VOLUME /var/etcd /var/lib/etcd
           
           ENTRYPOINT ["/usr/local/bin/etcd"]
           EOF
-          
-          # Copy binaries
-          cp bin/etcd /tmp/etcd-build/
-          cp bin/etcdctl /tmp/etcd-build/
-          cp bin/etcdutl /tmp/etcd-build/
-          
-          # Build and push
-          cd /tmp/etcd-build
-          docker build \
-            --tag ${{ env.DOCKERHUB_REPO }}/etcd:${{ needs.get-versions.outputs.etcd_tag }}-riscv64 \
-            --tag ${{ env.DOCKERHUB_REPO }}/etcd:latest-riscv64 \
-            .
-          
-          docker push ${{ env.DOCKERHUB_REPO }}/etcd:${{ needs.get-versions.outputs.etcd_tag }}-riscv64
-          docker push ${{ env.DOCKERHUB_REPO }}/etcd:latest-riscv64
 
   # Create multi-arch manifest
   create-manifests:
