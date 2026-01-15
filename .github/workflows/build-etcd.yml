@@ -135,39 +135,47 @@ jobs:
       - name: Build etcd for RISC-V
         run: |
           export PATH=/usr/local/go/bin:$PATH
-          export GOPATH=$HOME/go
-          
+
           cd etcd
-          
+
           # Build etcd and etcdctl for RISC-V
           GOARCH=riscv64 ./scripts/build.sh
-          
+
           # Create Dockerfile
           mkdir -p /tmp/etcd-build
-          
+
           cat > /tmp/etcd-build/Dockerfile << 'EOF'
           FROM riscv64/debian:trixie-slim
-          
+
           RUN apt-get update && \
               apt-get install -y ca-certificates && \
               rm -rf /var/lib/apt/lists/*
-          
+
           COPY etcd /usr/local/bin/etcd
           COPY etcdctl /usr/local/bin/etcdctl
           COPY etcdutl /usr/local/bin/etcdutl
-          
+
           RUN chmod +x /usr/local/bin/etcd* && \
               mkdir -p /var/etcd /var/lib/etcd
-          
+
           # SET THE UNSUPPORTED ARCH ENV VAR
           ENV ETCD_UNSUPPORTED_ARCH=riscv64
-          
+
           EXPOSE 2379 2380
-          
+
           VOLUME /var/etcd /var/lib/etcd
-          
+
           ENTRYPOINT ["/usr/local/bin/etcd"]
           EOF
+          cd /tmp/etcd-build
+
+          docker build \
+            --tag ${{ env.DOCKERHUB_REPO }}/etcd:${{ needs.get-versions.outputs.etcd_tag }}-riscv64 \
+            --tag ${{ env.DOCKERHUB_REPO }}/etcd:latest-riscv64 \
+            .
+
+          docker push ${{ env.DOCKERHUB_REPO }}/etcd:${{ needs.get-versions.outputs.etcd_tag }}-riscv64
+          docker push ${{ env.DOCKERHUB_REPO }}/etcd:latest-riscv64
 
   # Create multi-arch manifest
   create-manifests:
