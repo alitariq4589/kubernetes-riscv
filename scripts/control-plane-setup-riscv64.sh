@@ -191,7 +191,7 @@ sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-apiserver:${K8S_
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-controller-manager:${K8S_VERSION}
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-scheduler:${K8S_VERSION}
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION}
-sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION}
+sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION}-riscv64
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VERSION}
 
 # Tag images to match what kubeadm expects
@@ -226,7 +226,7 @@ ctr_retag \
   registry.k8s.io/kube-proxy:v${K8S_VERSION}
 
 ctr_retag \
-  docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION} \
+  docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION}-riscv64 \
   registry.k8s.io/etcd:${ETCD_VERSION}-0
 
 ctr_retag \
