@@ -123,6 +123,21 @@ sudo sysctl --system
 echo "✓ System configured"
 echo ""
 
+# Install crictl
+
+VERSION="v1.28.0"
+wget https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-$VERSION-linux-riscv64.tar.gz
+sudo tar zxvf crictl-$VERSION-linux-riscv64.tar.gz -C /usr/local/bin
+rm -f crictl-$VERSION-linux-riscv64.tar.gz
+
+# Configure crictl
+cat <<EOF | sudo tee /etc/crictl.yaml
+runtime-endpoint: unix:///var/run/containerd/containerd.sock
+image-endpoint: unix:///var/run/containerd/containerd.sock
+timeout: 10
+debug: false
+EOF
+
 # --- SETUP KUBELET SERVICE ---
 echo "Step 3: Setting up kubelet systemd service..."
 
