@@ -197,32 +197,44 @@ sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VER
 # Tag images to match what kubeadm expects
 echo "Tagging images for kubeadm..."
 
-sudo ctr -n k8s.io images tag \
+# Helper to make ctr tagging idempotent
+ctr_retag() {
+    local src="$1"
+    local dst="$2"
+
+    # Remove destination tag if it already exists
+    sudo ctr -n k8s.io images rm "$dst" 2>/dev/null || true
+
+    # Re-tag
+    sudo ctr -n k8s.io images tag "$src" "$dst"
+}
+
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/kube-apiserver:${K8S_VERSION} \
   registry.k8s.io/kube-apiserver:v${K8S_VERSION}
 
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/kube-controller-manager:${K8S_VERSION} \
   registry.k8s.io/kube-controller-manager:v${K8S_VERSION}
 
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/kube-scheduler:${K8S_VERSION} \
   registry.k8s.io/kube-scheduler:v${K8S_VERSION}
 
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION} \
   registry.k8s.io/kube-proxy:v${K8S_VERSION}
 
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION} \
   registry.k8s.io/etcd:${ETCD_VERSION}-0
 
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VERSION} \
   registry.k8s.io/coredns/coredns:v${COREDNS_VERSION}
 
 # Also tag pause image
-sudo ctr -n k8s.io images tag \
+ctr_retag \
   docker.io/${DOCKERHUB_USER}/pause:${PAUSE_VERSION} \
   registry.k8s.io/pause:${PAUSE_VERSION}.1
 
