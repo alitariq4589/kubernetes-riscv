@@ -365,7 +365,7 @@ jobs:
           
           # Create Dockerfile for building CNI plugin
           cat > Dockerfile << 'EOF'
-          FROM riscv64/golang:1.24-alpine AS builder  # Change from 1.22 to 1.24
+          FROM riscv64/golang:1.24-alpine AS builder
           WORKDIR /build
           COPY . .
           RUN apk add --no-cache git make && CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o flannel-riscv64 .
@@ -402,7 +402,7 @@ jobs:
           
           # Create Dockerfile for building CNI plugin
           cat > Dockerfile << 'EOF'
-          FROM riscv64/golang:1.24-alpine AS builder  # Change from 1.22 to 1.24
+          FROM riscv64/golang:1.24-alpine AS builder
           WORKDIR /build
           COPY . .
           RUN apk add --no-cache git make && CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o flannel-riscv64 .
