@@ -303,6 +303,8 @@ helm install flannel \
   --set podCidr="10.244.0.0/16" \
   --set image.repository="${DOCKERHUB_USER}/flannel" \
   --set image.tag="${FLANNEL_VERSION}" \
+  --set cniImage.repository="${DOCKERHUB_USER}/flannel" \
+  --set cniImage.tag="${FLANNEL_VERSION}" \
   flannel/flannel
 
 echo "✓ Flannel installed"
