@@ -297,14 +297,16 @@ helm repo update
 kubectl create namespace kube-flannel
 kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged
 
-# Install Flannel with custom image
+# Install Flannel with custom image AND custom CNI plugin init container
 helm install flannel \
   --namespace kube-flannel \
   --set podCidr="10.244.0.0/16" \
   --set image.repository="${DOCKERHUB_USER}/flannel" \
   --set image.tag="${FLANNEL_VERSION}" \
-  --set cniImage.repository="${DOCKERHUB_USER}/flannel" \
-  --set cniImage.tag="${FLANNEL_VERSION}" \
+  --set initContainers[0].image="${DOCKERHUB_USER}/flannel-cni-plugin:latest" \
+  --set initContainers[0].name="install-cni-plugin" \
+  --set initContainers[0].command="{cp}" \
+  --set initContainers[0].args="{-f,/flannel,/opt/cni/bin/flannel}" \
   flannel/flannel
 
 echo "✓ Flannel installed"
