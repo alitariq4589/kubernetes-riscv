@@ -50,6 +50,7 @@ sudo ip link delete cni0 2>/dev/null || true
 sudo ip link delete flannel.1 2>/dev/null || true
 sudo rm -rf /var/lib/cni/
 sudo rm -rf /etc/cni/net.d/*
+sudo rm -rf /run/flannel/
 
 # Remove any Flannel systemd services (from previous attempts)
 sudo systemctl stop flanneld 2>/dev/null || true
@@ -62,6 +63,7 @@ sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sud
 
 # Remove CNI binaries from previous installs
 sudo rm -f /opt/cni/bin/*flannel* 2>/dev/null || true
+sudo rm -f /usr/lib/cni/*flannel* 2>/dev/null || true
 sudo rm -f /usr/local/bin/flanneld 2>/dev/null || true
 
 echo "✓ Cleanup complete"
@@ -88,9 +90,14 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 echo "Configuring custom pause image..."
 sudo sed -i "s|sandbox_image = .*|sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"|g" /etc/containerd/config.toml
 
+# *** CRITICAL: Configure CNI binary paths ***
+# Ensure containerd knows about both standard locations
+sudo sed -i 's|bin_dir = .*|bin_dir = "/opt/cni/bin:/usr/lib/cni"|g' /etc/containerd/config.toml
+
 # Verify pause image configuration
-echo "Verifying pause image configuration:"
+echo "Verifying containerd configuration:"
 grep sandbox_image /etc/containerd/config.toml
+grep bin_dir /etc/containerd/config.toml
 
 sudo systemctl restart containerd
 sudo systemctl enable containerd
@@ -124,7 +131,6 @@ echo "✓ System configured"
 echo ""
 
 # Install crictl
-
 VERSION="v1.28.0"
 wget https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-$VERSION-linux-riscv64.tar.gz
 sudo tar zxvf crictl-$VERSION-linux-riscv64.tar.gz -C /usr/local/bin
@@ -187,6 +193,10 @@ KUBELET_DEFAULTS
 sudo mkdir -p /var/lib/kubelet
 sudo mkdir -p /etc/kubernetes/manifests
 sudo mkdir -p /etc/kubernetes/pki
+sudo mkdir -p /opt/cni/bin
+sudo mkdir -p /usr/lib/cni
+sudo mkdir -p /etc/cni/net.d
+sudo mkdir -p /run/flannel
 
 # Enable kubelet service
 sudo systemctl daemon-reload
@@ -208,6 +218,8 @@ sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-scheduler:${K8S_
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION}
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/etcd:${ETCD_VERSION}-riscv64
 sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/coredns:${COREDNS_VERSION}
+sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/flannel:${FLANNEL_VERSION}
+sudo ctr -n k8s.io images pull docker.io/${DOCKERHUB_USER}/flannel-cni-plugin:latest
 
 # Tag images to match what kubeadm expects
 echo "Tagging images for kubeadm..."
@@ -256,13 +268,30 @@ ctr_retag \
 echo "✓ Custom images pulled and tagged"
 echo ""
 
-# Verify images
-echo "Verifying images in containerd:"
-sudo ctr -n k8s.io images ls | grep -E "kube-|etcd|coredns|pause"
+# --- INSTALL FLANNEL CNI PLUGIN BINARY ---
+echo "Step 5: Installing Flannel CNI plugin binary..."
+
+# Extract CNI plugin from the image
+TEMP_CONTAINER=$(sudo ctr -n k8s.io run --rm docker.io/${DOCKERHUB_USER}/flannel-cni-plugin:latest temp-extract /bin/sh -c "cat /flannel" > /tmp/flannel-binary)
+
+# Install to both locations for maximum compatibility
+sudo install -m 755 /tmp/flannel-binary /opt/cni/bin/flannel
+sudo install -m 755 /tmp/flannel-binary /usr/lib/cni/flannel
+
+# Clean up
+rm -f /tmp/flannel-binary
+
+echo "✓ Flannel CNI plugin installed to /opt/cni/bin and /usr/lib/cni"
+echo ""
+
+# Verify CNI plugin installation
+echo "Verifying CNI plugin installation:"
+ls -lh /opt/cni/bin/flannel
+ls -lh /usr/lib/cni/flannel
 echo ""
 
 # --- INITIALIZE CONTROL PLANE ---
-echo "Step 5: Initializing Kubernetes control plane..."
+echo "Step 6: Initializing Kubernetes control plane..."
 
 sudo kubeadm init \
   --pod-network-cidr=10.244.0.0/16 \
@@ -276,8 +305,22 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 echo "✓ Control plane initialized"
 echo ""
 
+# --- ALLOW PODS ON CONTROL PLANE (OPTIONAL) ---
+echo "Step 7: Configuring control plane node..."
+
+read -p "Do you want to allow pods to run on the control plane node? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Removing control plane taint to allow pod scheduling..."
+    kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+    echo "✓ Control plane node can now run pods"
+else
+    echo "Control plane will remain dedicated (no workload pods)"
+fi
+echo ""
+
 # --- INSTALL HELM ---
-echo "Step 6: Installing Helm..."
+echo "Step 8: Installing Helm..."
 
 if ! command -v helm &> /dev/null; then
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -286,8 +329,8 @@ fi
 echo "✓ Helm installed"
 echo ""
 
-# --- INSTALL FLANNEL WITH CUSTOM IMAGES ---
-echo "Step 7: Installing Flannel with custom images..."
+# --- INSTALL FLANNEL ---
+echo "Step 9: Installing Flannel CNI..."
 
 # Add Flannel Helm repo
 helm repo add flannel https://flannel-io.github.io/flannel/
@@ -297,27 +340,68 @@ helm repo update
 kubectl create namespace kube-flannel
 kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged
 
-# Install Flannel with custom image AND custom CNI plugin init container
+# Create custom Flannel values file
+cat <<EOF > /tmp/flannel-values.yaml
+podCidr: "10.244.0.0/16"
+
+# Use custom Flannel image
+image:
+  repository: ${DOCKERHUB_USER}/flannel
+  tag: ${FLANNEL_VERSION}
+
+# Flannel backend configuration
+flannel:
+  backend: "vxlan"
+EOF
+
+# Install Flannel
 helm install flannel \
   --namespace kube-flannel \
-  --set podCidr="10.244.0.0/16" \
-  --set image.repository="${DOCKERHUB_USER}/flannel" \
-  --set image.tag="${FLANNEL_VERSION}" \
-  --set initContainers[0].image="${DOCKERHUB_USER}/flannel-cni-plugin:latest" \
-  --set initContainers[0].name="install-cni-plugin" \
-  --set initContainers[0].command="{cp}" \
-  --set initContainers[0].args="{-f,/flannel,/opt/cni/bin/flannel}" \
+  --values /tmp/flannel-values.yaml \
   flannel/flannel
 
 echo "✓ Flannel installed"
 echo ""
 
 # Wait for Flannel to be ready
-echo "Step 8: Waiting for Flannel to be ready..."
-sleep 20
+echo "Step 10: Waiting for Flannel to initialize..."
+echo "This may take up to 2 minutes..."
 
-# Check status
-kubectl get pods -n kube-flannel
+# Wait for Flannel daemonset to be ready
+kubectl wait --for=condition=ready pod \
+  -l app=flannel \
+  -n kube-flannel \
+  --timeout=180s || {
+    echo "Warning: Flannel pods took longer than expected to start"
+    echo "Checking pod status..."
+    kubectl get pods -n kube-flannel
+    kubectl describe pods -n kube-flannel
+}
+
+# Wait for subnet.env file to be created
+timeout=60
+elapsed=0
+while [ ! -f /run/flannel/subnet.env ] && [ $elapsed -lt $timeout ]; do
+    echo "Waiting for Flannel to create subnet.env... ($elapsed/${timeout}s)"
+    sleep 5
+    elapsed=$((elapsed + 5))
+done
+
+if [ -f /run/flannel/subnet.env ]; then
+    echo "✓ Flannel subnet.env created successfully"
+    cat /run/flannel/subnet.env
+else
+    echo "Warning: /run/flannel/subnet.env not found after ${timeout}s"
+    echo "Flannel may still be initializing. Check with: kubectl logs -n kube-flannel -l app=flannel"
+fi
+
+echo ""
+
+# Wait for nodes to be ready
+echo "Step 11: Waiting for node to be ready..."
+kubectl wait --for=condition=ready node --all --timeout=180s || {
+    echo "Warning: Node not ready yet. This may take a few more moments."
+}
 
 echo ""
 echo "============================================"
@@ -355,6 +439,7 @@ echo "  ${DOCKERHUB_USER}/kube-proxy:${K8S_VERSION}"
 echo "  ${DOCKERHUB_USER}/etcd:${ETCD_VERSION}"
 echo "  ${DOCKERHUB_USER}/coredns:${COREDNS_VERSION}"
 echo "  ${DOCKERHUB_USER}/flannel:${FLANNEL_VERSION}"
+echo "  ${DOCKERHUB_USER}/flannel-cni-plugin:latest"
 echo "============================================"
 echo ""
 echo "Useful Commands:"
@@ -362,4 +447,5 @@ echo "  kubectl get nodes                  # Check node status"
 echo "  kubectl get pods -A                # Check all pods"
 echo "  sudo systemctl status kubelet      # Check kubelet service"
 echo "  sudo journalctl -u kubelet -f      # View kubelet logs"
+echo "  kubectl logs -n kube-flannel -l app=flannel  # View Flannel logs"
 echo "============================================"
