@@ -413,7 +413,7 @@ jobs:
           RUN chmod +x /opt/cni/bin/flannel /flannel
           EOF
           
-          docker build -t ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64 .
+          docker build --network=host -t ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64 .
           docker push ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64
         
   create-manifests:
