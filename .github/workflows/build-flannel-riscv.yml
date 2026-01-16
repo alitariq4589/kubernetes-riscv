@@ -336,10 +336,92 @@ jobs:
           # Push the images
           docker push ${{ env.DOCKERHUB_REPO }}/flannel:${TAG}-${ARCH}
           docker push ${{ env.DOCKERHUB_REPO }}/flannel:latest-${ARCH}
-        
+
+
+# Build Flannel CNI Plugin for x86
+  build-flannel-cni-x86:
+    needs: get-versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Clone Flannel CNI Plugin repository
+        run: |
+          git clone --depth=1 https://github.com/flannel-io/cni-plugin.git
+
+      - name: Build Flannel CNI Plugin for x86_64
+        run: |
+          cd cni-plugin
+          
+          # Create Dockerfile for building CNI plugin
+          cat > Dockerfile << 'EOF'
+          FROM golang:1.22-alpine AS builder
+          WORKDIR /build
+          COPY . .
+          RUN apk add --no-cache git make && \
+              CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o flannel-amd64 .
+          
+          FROM alpine:latest
+          RUN mkdir -p /opt/cni/bin
+          COPY --from=builder /build/flannel-amd64 /opt/cni/bin/flannel
+          COPY --from=builder /build/flannel-amd64 /flannel
+          RUN chmod +x /opt/cni/bin/flannel /flannel
+          EOF
+          
+          docker build -t ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-amd64 .
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-amd64
+
+  # Build Flannel CNI Plugin for RISC-V
+  build-flannel-cni-riscv:
+    needs: get-versions
+    runs-on: RISCV64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to DockerHub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Clone Flannel CNI Plugin repository
+        run: |
+          rm -rf cni-plugin
+          git clone --depth=1 https://github.com/flannel-io/cni-plugin.git
+
+      - name: Build Flannel CNI Plugin for RISC-V
+        run: |
+          cd cni-plugin
+          
+          # Create Dockerfile for building CNI plugin
+          cat > Dockerfile << 'EOF'
+          FROM riscv64/golang:1.22-alpine AS builder
+          WORKDIR /build
+          COPY . .
+          RUN apk add --no-cache git make && \
+              CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o flannel-riscv64 .
+          
+          FROM riscv64/alpine:latest
+          RUN mkdir -p /opt/cni/bin
+          COPY --from=builder /build/flannel-riscv64 /opt/cni/bin/flannel
+          COPY --from=builder /build/flannel-riscv64 /flannel
+          RUN chmod +x /opt/cni/bin/flannel /flannel
+          EOF
+          
+          docker build -t ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64 .
+          docker push ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64
         
   create-manifests:
-    needs: [get-versions, build-pause-x86, build-pause-riscv, build-flannel-x86, build-flannel-riscv]
+    needs: [get-versions, build-pause-x86, build-pause-riscv, build-flannel-x86, build-flannel-riscv, build-flannel-cni-x86, build-flannel-cni-riscv]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -351,20 +433,8 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Inspect images before manifest creation
-        run: |
-          echo "Inspecting pause images:"
-          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-amd64 || echo "pause amd64 not found"
-          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }}-riscv64 || echo "pause riscv64 not found"
-          
-          echo ""
-          echo "Inspecting flannel images:"
-          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-amd64 || echo "flannel amd64 not found"
-          docker manifest inspect ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }}-riscv64 || echo "flannel riscv64 not found"
-
       - name: Create pause multi-arch manifest
         run: |
-          # Pause container - remove existing manifests if they exist
           docker manifest rm ${{ env.DOCKERHUB_REPO }}/pause:${{ needs.get-versions.outputs.pause_version }} 2>/dev/null || true
           docker manifest rm ${{ env.DOCKERHUB_REPO }}/pause:latest 2>/dev/null || true
           
@@ -382,7 +452,6 @@ jobs:
 
       - name: Create Flannel multi-arch manifest
         run: |
-          # Flannel - remove existing manifests if they exist
           docker manifest rm ${{ env.DOCKERHUB_REPO }}/flannel:${{ needs.get-versions.outputs.flannel_tag }} 2>/dev/null || true
           docker manifest rm ${{ env.DOCKERHUB_REPO }}/flannel:latest 2>/dev/null || true
           
@@ -397,6 +466,16 @@ jobs:
             ${{ env.DOCKERHUB_REPO }}/flannel:latest-riscv64
           
           docker manifest push ${{ env.DOCKERHUB_REPO }}/flannel:latest
+
+      - name: Create Flannel CNI Plugin multi-arch manifest
+        run: |
+          docker manifest rm ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest 2>/dev/null || true
+          
+          docker manifest create ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest \
+            ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-amd64 \
+            ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest-riscv64
+          
+          docker manifest push ${{ env.DOCKERHUB_REPO }}/flannel-cni-plugin:latest
 
   # Generate installation files
   generate-install-files:
