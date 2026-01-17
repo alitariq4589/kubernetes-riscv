@@ -83,7 +83,27 @@ jobs:
           # Create Dockerfile
           mkdir -p /tmp/${{ matrix.component }}-build
           
-          cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
+          # Use different Dockerfile for kube-proxy vs other components
+          if [ "${{ matrix.component }}" = "kube-proxy" ]; then
+            cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
+          FROM debian:trixie-slim
+          
+          RUN apt-get update && \
+              apt-get install -y \
+                ca-certificates \
+                iptables \
+                iproute2 \
+                conntrack \
+                ipset && \
+              rm -rf /var/lib/apt/lists/*
+          
+          COPY ${{ matrix.component }} /usr/local/bin/${{ matrix.component }}
+          RUN chmod +x /usr/local/bin/${{ matrix.component }}
+          
+          ENTRYPOINT ["/usr/local/bin/${{ matrix.component }}"]
+          EOF
+          else
+            cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
           FROM debian:trixie-slim
           
           RUN apt-get update && \
@@ -95,10 +115,9 @@ jobs:
           
           ENTRYPOINT ["/usr/local/bin/${{ matrix.component }}"]
           EOF
+          fi
           
           # Copy binary
-          ls _output/*
-          ls _output/bin/
           cp _output/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
           # Build and push
@@ -143,7 +162,6 @@ jobs:
 
       - name: Build ${{ matrix.component }} for RISC-V
         run: |
-          
           cd kubernetes
           
           # Build the component for RISC-V
@@ -152,7 +170,27 @@ jobs:
           # Create Dockerfile
           mkdir -p /tmp/${{ matrix.component }}-build
           
-          cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
+          # Use different Dockerfile for kube-proxy vs other components
+          if [ "${{ matrix.component }}" = "kube-proxy" ]; then
+            cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
+          FROM riscv64/debian:trixie-slim
+          
+          RUN apt-get update && \
+              apt-get install -y \
+                ca-certificates \
+                iptables \
+                iproute2 \
+                conntrack \
+                ipset && \
+              rm -rf /var/lib/apt/lists/*
+          
+          COPY ${{ matrix.component }} /usr/local/bin/${{ matrix.component }}
+          RUN chmod +x /usr/local/bin/${{ matrix.component }}
+          
+          ENTRYPOINT ["/usr/local/bin/${{ matrix.component }}"]
+          EOF
+          else
+            cat > /tmp/${{ matrix.component }}-build/Dockerfile << 'EOF'
           FROM riscv64/debian:trixie-slim
           
           RUN apt-get update && \
@@ -164,9 +202,9 @@ jobs:
           
           ENTRYPOINT ["/usr/local/bin/${{ matrix.component }}"]
           EOF
+          fi
           
           # Copy binary
-
           cp _output/local/go/bin/${{ matrix.component }} /tmp/${{ matrix.component }}-build/
           
           # Build and push
