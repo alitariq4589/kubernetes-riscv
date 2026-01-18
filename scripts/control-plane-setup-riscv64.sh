@@ -92,7 +92,7 @@ sudo sed -i "s|sandbox_image = .*|sandbox_image = \"${DOCKERHUB_USER}/pause:${PA
 
 # *** CRITICAL: Configure CNI binary paths ***
 # Ensure containerd knows about both standard locations
-sudo sed -i 's|bin_dir = .*|bin_dir = "/opt/cni/bin:/usr/lib/cni"|g' /etc/containerd/config.toml
+sudo sed -i 's|bin_dir = .*|bin_dir = "/opt/cni/bin"|g' /etc/containerd/config.toml
 
 # Verify pause image configuration
 echo "Verifying containerd configuration:"
