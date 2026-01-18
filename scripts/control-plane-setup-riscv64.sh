@@ -520,6 +520,10 @@ print_step_footer "success"
 
 print_step_header "11" "Verifying installation"
 
+run_with_spinner "Waiting for all pods to be ready..."
+
+sleep 5
+
 run_with_spinner "Waiting for nodes to be ready" kubectl wait --for=condition=ready node --all --timeout=60s > /dev/null 2>&1 || true
 
 print_step_footer "success"
