@@ -368,11 +368,11 @@ jobs:
           FROM golang:1.24-alpine AS builder
           WORKDIR /build
           COPY . .
-          RUN apk add --no-cache git make && CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o flannel-riscv64 .
+          RUN apk add --no-cache git make && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o flannel-amd64 .
           FROM alpine:latest
           RUN mkdir -p /opt/cni/bin
-          COPY --from=builder /build/flannel-riscv64 /opt/cni/bin/flannel
-          COPY --from=builder /build/flannel-riscv64 /flannel
+          COPY --from=builder /build/flannel-amd64 /opt/cni/bin/flannel
+          COPY --from=builder /build/flannel-amd64 /flannel
           RUN chmod +x /opt/cni/bin/flannel /flannel
           EOF
           

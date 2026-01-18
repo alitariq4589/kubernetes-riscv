@@ -90,11 +90,11 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 echo "Configuring custom pause image..."
 sudo sed -i "s|sandbox_image = .*|sandbox_image = \"${DOCKERHUB_USER}/pause:${PAUSE_VERSION}\"|g" /etc/containerd/config.toml
 
-# *** CRITICAL: Configure CNI binary paths ***
-# Ensure containerd knows about both standard locations
+# *** CRITICAL: Configure CNI binary path ***
+# containerd only supports a single path, not colon-separated paths
 sudo sed -i 's|bin_dir = .*|bin_dir = "/opt/cni/bin"|g' /etc/containerd/config.toml
 
-# Verify pause image configuration
+# Verify containerd configuration
 echo "Verifying containerd configuration:"
 grep sandbox_image /etc/containerd/config.toml
 grep bin_dir /etc/containerd/config.toml
@@ -271,24 +271,121 @@ echo ""
 # --- INSTALL FLANNEL CNI PLUGIN BINARY ---
 echo "Step 5: Installing Flannel CNI plugin binary..."
 
-# Extract CNI plugin from the image
-TEMP_CONTAINER=$(sudo ctr -n k8s.io run --rm docker.io/${DOCKERHUB_USER}/flannel-cni-plugin:latest temp-extract /bin/sh -c "cat /flannel" > /tmp/flannel-binary)
+# Method 1: Try to extract from the CNI plugin image
+echo "Attempting to extract Flannel CNI binary from image..."
 
-# Install to both locations for maximum compatibility
-sudo install -m 755 /tmp/flannel-binary /opt/cni/bin/flannel
-sudo install -m 755 /tmp/flannel-binary /usr/lib/cni/flannel
+# Create a temporary directory
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
 
-# Clean up
-rm -f /tmp/flannel-binary
+# Try using ctr to export the image and extract the binary
+if sudo ctr -n k8s.io images export flannel-cni.tar docker.io/${DOCKERHUB_USER}/flannel-cni-plugin:latest 2>/dev/null; then
+    echo "Image exported, extracting binary..."
+    tar -xf flannel-cni.tar
+    
+    # Find and extract the flannel binary from the layer
+    for layer in $(find . -name "layer.tar"); do
+        if tar -tf "$layer" 2>/dev/null | grep -q "^flannel$\|^./flannel$\|opt/cni/bin/flannel"; then
+            echo "Found flannel binary in layer, extracting..."
+            tar -xf "$layer" -C . 2>/dev/null || true
+        fi
+    done
+    
+    # Find the extracted binary
+    FLANNEL_BINARY=$(find . -name "flannel" -type f -executable 2>/dev/null | head -1)
+    
+    if [ -n "$FLANNEL_BINARY" ] && [ -f "$FLANNEL_BINARY" ]; then
+        echo "Successfully extracted flannel binary"
+        sudo install -m 755 "$FLANNEL_BINARY" /opt/cni/bin/flannel
+        sudo install -m 755 "$FLANNEL_BINARY" /usr/lib/cni/flannel
+        CNI_INSTALLED=true
+    fi
+fi
 
-echo "✓ Flannel CNI plugin installed to /opt/cni/bin and /usr/lib/cni"
-echo ""
+# Cleanup temp directory
+cd /
+rm -rf "$TEMP_DIR"
 
-# Verify CNI plugin installation
-echo "Verifying CNI plugin installation:"
-ls -lh /opt/cni/bin/flannel
-ls -lh /usr/lib/cni/flannel
-echo ""
+# Method 2: If extraction failed, run a temporary container to copy the file out
+if [ "$CNI_INSTALLED" != "true" ]; then
+    echo "Direct extraction failed, trying container method..."
+    
+    # Create a container and copy file from it
+    CONTAINER_ID=$(sudo ctr -n k8s.io container create \
+        docker.io/${DOCKERHUB_USER}/flannel-cni-plugin:latest \
+        flannel-extract-temp 2>/dev/null)
+    
+    if [ -n "$CONTAINER_ID" ]; then
+        # Mount the container's filesystem and copy the binary
+        sudo ctr -n k8s.io task start "$CONTAINER_ID" >/dev/null 2>&1 || true
+        sleep 2
+        
+        # Try to get the binary from the container
+        if sudo ctr -n k8s.io task exec --exec-id extract1 "$CONTAINER_ID" cat /flannel > /tmp/flannel-binary 2>/dev/null; then
+            if [ -s /tmp/flannel-binary ]; then
+                sudo install -m 755 /tmp/flannel-binary /opt/cni/bin/flannel
+                sudo install -m 755 /tmp/flannel-binary /usr/lib/cni/flannel
+                rm -f /tmp/flannel-binary
+                CNI_INSTALLED=true
+            fi
+        fi
+        
+        # Cleanup container
+        sudo ctr -n k8s.io task kill "$CONTAINER_ID" >/dev/null 2>&1 || true
+        sudo ctr -n k8s.io task delete "$CONTAINER_ID" >/dev/null 2>&1 || true
+        sudo ctr -n k8s.io container delete "$CONTAINER_ID" >/dev/null 2>&1 || true
+    fi
+fi
+
+# Method 3: If all else fails, build it from source
+if [ "$CNI_INSTALLED" != "true" ]; then
+    echo "Container method failed, building CNI plugin from source..."
+    
+    # Install Go if not present
+    if ! command -v go &> /dev/null; then
+        echo "Installing Go..."
+        cd /tmp
+        wget https://go.dev/dl/go1.22.0.linux-riscv64.tar.gz
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf go1.22.0.linux-riscv64.tar.gz
+        export PATH=$PATH:/usr/local/go/bin
+        rm go1.22.0.linux-riscv64.tar.gz
+    fi
+    
+    # Clone and build Flannel CNI plugin
+    cd /tmp
+    rm -rf cni-plugin
+    git clone --depth=1 https://github.com/flannel-io/cni-plugin.git
+    cd cni-plugin
+    
+    echo "Building Flannel CNI plugin..."
+    CGO_ENABLED=0 go build -o flannel-cni .
+    
+    if [ -f flannel-cni ]; then
+        sudo install -m 755 flannel-cni /opt/cni/bin/flannel
+        sudo install -m 755 flannel-cni /usr/lib/cni/flannel
+        CNI_INSTALLED=true
+        echo "✓ Built and installed Flannel CNI plugin from source"
+    fi
+    
+    # Cleanup
+    cd /
+    rm -rf /tmp/cni-plugin
+fi
+
+# Final verification
+if [ "$CNI_INSTALLED" = "true" ]; then
+    echo "✓ Flannel CNI plugin installed successfully"
+    echo ""
+    echo "Verifying CNI plugin installation:"
+    ls -lh /opt/cni/bin/flannel
+    ls -lh /usr/lib/cni/flannel
+    echo ""
+else
+    echo "ERROR: Failed to install Flannel CNI plugin!"
+    echo "Please check the logs above and try manual installation"
+    exit 1
+fi
 
 # --- INITIALIZE CONTROL PLANE ---
 echo "Step 6: Initializing Kubernetes control plane..."
